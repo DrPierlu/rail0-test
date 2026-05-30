@@ -1,0 +1,9 @@
+.env
+vendor/
+.bundle/
+*.gem
+node_modules/
+__pycache__/
+.pytest_cache/
+*.pyc
+.venv/

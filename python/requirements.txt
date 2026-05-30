@@ -1,0 +1,4 @@
+pytest
+eth-account>=0.11
+# Local SDK — no PyPI publish needed
+-e ../../rail0-py
