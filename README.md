@@ -31,6 +31,22 @@ rail0-test/
 │       ├── conftest.py
 │       └── test_authorize_capture.py
 │
+├── rust/                  # cargo test — rail0-rust SDK
+│   ├── Cargo.toml
+│   └── tests/
+│       ├── helpers.rs
+│       ├── authorize_capture.rs
+│       └── charge.rs
+│
+├── typescript/            # Jest + ts-jest — @rail0/sdk + ethers v6
+│   ├── package.json
+│   ├── tsconfig.json
+│   └── src/
+│       ├── helpers.ts
+│       └── flows/
+│           ├── authorizeCapture.test.ts
+│           └── charge.test.ts
+│
 └── cross_sdk/             # signature compatibility across SDKs
     ├── go.mod
     └── ruby_sign_go_submit_test.go   # Ruby signs → Go submits
@@ -41,10 +57,12 @@ rail0-test/
 - Ruby ≥ 3.2 + Bundler
 - Go ≥ 1.22
 - Python ≥ 3.11
+- Rust ≥ 1.75 (stable)
+- Node.js ≥ 20
 - Test wallets with USDC on the target chain (Arc Testnet by default)
 - The API running at `RAIL0_API_URL` with the test account registered
 
-All SDK repos (`rail0-ruby`, `rail0-go`, `rail0-py`) are expected as siblings of `rail0-test`:
+All SDK repos are expected as siblings of `rail0-test`:
 
 ```
 Documents/GitHub/
@@ -52,6 +70,8 @@ Documents/GitHub/
 ├── rail0-ruby
 ├── rail0-go
 ├── rail0-py
+├── rail0-rust
+├── rail0-ts
 └── rail0-test      ← this repo
 ```
 
@@ -72,17 +92,19 @@ cp .env.example .env
 ./run.sh ruby
 ./run.sh go
 ./run.sh python
+./run.sh rust
+./run.sh typescript
 ./run.sh cross
 ```
 
 ## Flows covered
 
-| Flow | Ruby | Go | Python |
-|---|---|---|---|
-| authorize → capture → refund | ✓ | ✓ | ✓ |
-| authorize → void | ✓ | — | ✓ |
-| charge | ✓ | ✓ | ✓ |
-| partial capture × 2 → partial refund × 2 → release | ✓ | — | — |
+| Flow | Ruby | Go | Python | Rust | TypeScript |
+|---|---|---|---|---|---|
+| authorize → capture → refund | ✓ | ✓ | ✓ | ✓ | ✓ |
+| authorize → void | ✓ | — | ✓ | — | ✓ |
+| charge | ✓ | ✓ | ✓ | ✓ | ✓ |
+| partial capture × 2 → partial refund × 2 → release | ✓ | — | — | — | — |
 
 ## Cross-SDK tests
 

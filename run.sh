@@ -5,7 +5,7 @@
 #   cp .env.example .env && $EDITOR .env
 #   ./run.sh [suite]
 #
-# Suites: ruby | go | python | cross | all (default)
+# Suites: ruby | go | python | rust | typescript | cross | all (default)
 #
 # The script sources .env automatically if present.
 
@@ -66,6 +66,21 @@ run_python() {
   .venv/bin/pytest flows/ -v
 }
 
+# ── Rust ──────────────────────────────────────────────────────────────────────
+run_rust() {
+  cd "$ROOT/rust"
+  cargo test -- --nocapture 2>&1
+}
+
+# ── TypeScript ────────────────────────────────────────────────────────────────
+run_typescript() {
+  cd "$ROOT/typescript"
+  if [[ ! -d node_modules ]]; then
+    npm install --silent
+  fi
+  npm test
+}
+
 # ── Cross-SDK ─────────────────────────────────────────────────────────────────
 run_cross() {
   cd "$ROOT/cross_sdk"
@@ -74,15 +89,19 @@ run_cross() {
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 case "$SUITE" in
-  ruby)   run_suite "Ruby"     run_ruby   ;;
-  go)     run_suite "Go"       run_go     ;;
-  python) run_suite "Python"   run_python ;;
-  cross)  run_suite "Cross-SDK" run_cross ;;
+  ruby)       run_suite "Ruby"        run_ruby       ;;
+  go)         run_suite "Go"          run_go         ;;
+  python)     run_suite "Python"      run_python     ;;
+  rust)       run_suite "Rust"        run_rust       ;;
+  typescript) run_suite "TypeScript"  run_typescript ;;
+  cross)      run_suite "Cross-SDK"   run_cross      ;;
   all)
-    run_suite "Ruby"      run_ruby
-    run_suite "Go"        run_go
-    run_suite "Python"    run_python
-    run_suite "Cross-SDK" run_cross
+    run_suite "Ruby"       run_ruby
+    run_suite "Go"         run_go
+    run_suite "Python"     run_python
+    run_suite "Rust"       run_rust
+    run_suite "TypeScript" run_typescript
+    run_suite "Cross-SDK"  run_cross
     ;;
   *)
     echo "Unknown suite: $SUITE  (ruby | go | python | cross | all)"

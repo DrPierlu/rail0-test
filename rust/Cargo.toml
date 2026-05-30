@@ -1,0 +1,10 @@
+[package]
+name    = "rail0-integration-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dev-dependencies]
+rail0    = { path = "../../rail0-rust" }
+tokio    = { version = "1", features = ["full", "macros"] }
+alloy    = { version = "0.9", features = ["full"] }
+dotenvy  = "0.15"
