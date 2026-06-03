@@ -21,10 +21,10 @@ class PartialCaptureRefundReleaseTest < Minitest::Test
     desc "authorize → partial capture ×2 → partial refund ×2 → release",
          "1. Create + sign",
          "2. Authorize",
-         "3. Partial capture 300_000",
-         "4. Partial capture 200_000",
-         "5. Partial refund 100_000 (EIP-3009)",
-         "6. Partial refund 150_000 (EIP-3009)",
+         "3. Partial capture 0.30",
+         "4. Partial capture 0.20",
+         "5. Partial refund 0.10 (EIP-3009)",
+         "6. Partial refund 0.15 (EIP-3009)",
          "7. Wait for authorization_expiry",
          "8. Buyer release",
          "9. Verify final state"
@@ -36,34 +36,34 @@ class PartialCaptureRefundReleaseTest < Minitest::Test
 
     # ── 2. Authorize ──────────────────────────────────────────────────────────
     step "2. Authorize"
-    prep = client.payments.authorize_payload(payment_id)
+    prep = client.payments.authorize_prepare(payment_id)
     client.payments.authorize(payment_id, signed_transaction: sign_eip1559(prep[:unsigned_transaction], account_key))
     auth = poll_until_status(payment_id, "authorized", waiting_for: "authorize")
     ok "authorized — capturable=#{auth.dig(:on_chain, :capturable_amount)}"
 
-    # ── 3. Partial capture 300_000 ────────────────────────────────────────────
-    step "3. Partial capture 300_000"
-    prep = client.payments.capture_payload(payment_id, amount: "300000")
+    # ── 3. Partial capture 0.30 ───────────────────────────────────────────────
+    step "3. Partial capture 0.30"
+    prep = client.payments.capture_prepare(payment_id, amount: "0.30")
     client.payments.capture(payment_id, signed_transaction: sign_eip1559(prep[:unsigned_transaction], account_key))
     s = poll_until_status(payment_id, "partially_captured", waiting_for: "capture#1")
     ok "partially_captured — capturable=#{s.dig(:on_chain, :capturable_amount)}"
 
-    # ── 4. Partial capture 200_000 ────────────────────────────────────────────
-    step "4. Partial capture 200_000"
-    prep = client.payments.capture_payload(payment_id, amount: "200000")
+    # ── 4. Partial capture 0.20 ───────────────────────────────────────────────
+    step "4. Partial capture 0.20"
+    prep = client.payments.capture_prepare(payment_id, amount: "0.20")
     client.payments.capture(payment_id, signed_transaction: sign_eip1559(prep[:unsigned_transaction], account_key))
     s = poll_until_status(payment_id, "partially_captured", waiting_for: "capture#2")
     ok "partially_captured — capturable=#{s.dig(:on_chain, :capturable_amount)}"
 
-    # ── 5. Partial refund 100_000 (EIP-3009) ──────────────────────────────────
-    step "5. Partial refund 100_000"
-    refund_eip3009(payment_id, "100000")
+    # ── 5. Partial refund 0.10 (EIP-3009) ────────────────────────────────────
+    step "5. Partial refund 0.10"
+    refund_eip3009(payment_id, "0.10")
     poll_until_status(payment_id, "partially_refunded", waiting_for: "refund#1")
     ok "partially_refunded"
 
-    # ── 6. Partial refund 150_000 (EIP-3009) ──────────────────────────────────
-    step "6. Partial refund 150_000"
-    refund_eip3009(payment_id, "150000")
+    # ── 6. Partial refund 0.15 (EIP-3009) ────────────────────────────────────
+    step "6. Partial refund 0.15"
+    refund_eip3009(payment_id, "0.15")
     s = poll_until_status(payment_id, "partially_refunded", waiting_for: "refund#2")
     ok "partially_refunded — refundable=#{s.dig(:on_chain, :refundable_amount)}"
 
@@ -85,7 +85,7 @@ class PartialCaptureRefundReleaseTest < Minitest::Test
 
     # ── 8. Buyer release ──────────────────────────────────────────────────────
     step "8. release/payload → sign (as buyer) → submit"
-    prep = client.payments.release_payload(payment_id, caller_address: buyer_address)
+    prep = client.payments.release_prepare(payment_id, caller_address: buyer_address)
     assert prep[:unsigned_transaction]
 
     client.payments.release(payment_id, signed_transaction: sign_eip1559(prep[:unsigned_transaction], buyer_key))
@@ -105,11 +105,11 @@ class PartialCaptureRefundReleaseTest < Minitest::Test
 
   # EIP-3009 two-phase refund helper.
   def refund_eip3009(payment_id, refund_amount)
-    phase1 = client.payments.refund_payload(payment_id, amount: refund_amount)
+    phase1 = client.payments.refund_prepare(payment_id, amount: refund_amount)
     assert phase1[:signing_payload], "phase 1 must return signing_payload"
 
     vrs    = sign_payload_vrs(ENV.fetch("ACCOUNT_PRIVATE_KEY"), phase1[:signing_payload])
-    phase2 = client.payments.refund_payload(payment_id, amount: refund_amount, **vrs)
+    phase2 = client.payments.refund_prepare(payment_id, amount: refund_amount, **vrs)
     assert phase2[:unsigned_transaction], "phase 2 must return unsigned_transaction"
 
     client.payments.refund(payment_id, signed_transaction: sign_eip1559(phase2[:unsigned_transaction], account_key))
