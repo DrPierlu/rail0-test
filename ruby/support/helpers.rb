@@ -13,8 +13,24 @@ module IntegrationHelpers
 
   # ── Client ──────────────────────────────────────────────────────────────────
 
+  def account_jwt
+    @account_jwt ||= begin
+      base_url = ENV.fetch("RAIL0_API_URL", "http://localhost:4567")
+      domain   = URI.parse(base_url).host
+      unauthenticated_client = Rail0::Client.new(base_url: base_url)
+      resp = unauthenticated_client.auth.login(
+        private_key: ENV.fetch("ACCOUNT_PRIVATE_KEY"),
+        domain:      domain
+      )
+      resp[:token]
+    end
+  end
+
   def client
-    @client ||= Rail0::Client.new(base_url: ENV.fetch("RAIL0_API_URL", "http://localhost:4567"))
+    @client ||= Rail0::Client.new(
+      base_url: ENV.fetch("RAIL0_API_URL", "http://localhost:4567"),
+      headers:  { "Authorization" => "Bearer #{account_jwt}" }
+    )
   end
 
   def buyer_key

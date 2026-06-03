@@ -1,6 +1,6 @@
 # rail0-test
 
-End-to-end integration tests for the RAIL0 payment API, covering every supported SDK.
+Integration tests for the RAIL0 payment API — direct HTTP endpoint tests and full end-to-end flows across every supported SDK.
 
 ## Structure
 
@@ -8,6 +8,15 @@ End-to-end integration tests for the RAIL0 payment API, covering every supported
 rail0-test/
 ├── run.sh                 # orchestrator — runs all suites
 ├── .env.example           # required environment variables
+│
+├── api/                   # Minitest — direct HTTP endpoint tests (no SDK)
+│   ├── Gemfile
+│   ├── test_helper.rb
+│   └── tests/
+│       ├── auth_test.rb            # POST /auth/nonces, POST /auth, GET /payments auth
+│       ├── accounts_test.rb        # payment-methods, wallets, wallet_tokens
+│       ├── payments_test.rb        # GET /health, POST /payments, PUT /sign
+│       └── indexer_test.rb         # POST /sync/transactions auth + validation
 │
 ├── ruby/                  # Minitest — rail0-ruby SDK
 │   ├── Gemfile
@@ -89,6 +98,7 @@ cp .env.example .env
 ./run.sh
 
 # Single suite
+./run.sh api          # direct HTTP endpoint tests
 ./run.sh ruby
 ./run.sh go
 ./run.sh python
@@ -96,6 +106,24 @@ cp .env.example .env
 ./run.sh typescript
 ./run.sh cross
 ```
+
+## API suite
+
+`api/` tests the HTTP API directly without an SDK, using Ruby's standard `net/http`. They require a running rail0-api instance and the seeded test account. They cover:
+
+| File | Endpoints tested |
+|---|---|
+| `auth_test.rb` | `POST /auth/nonces`, `POST /auth`, `GET /payments` (auth enforcement) |
+| `accounts_test.rb` | `GET /accounts/:id/payment-methods`, `GET /accounts/:id/wallets`, `GET /accounts/:id/wallets/:id` |
+| `payments_test.rb` | `GET /health`, `GET /payments/:id`, `POST /payments`, `PUT /payments/:id/sign` |
+| `indexer_test.rb` | `POST /sync/transactions` (HMAC auth and input validation) |
+
+Required env vars for the api suite (in addition to the common ones):
+
+| Variable | Description |
+|---|---|
+| `RAIL0_ACCOUNT_ID` | UUID of the seeded test account (fixed: `019e748b-da9a-7c3f-ba32-50572ffd5388`) |
+| `RAIL0_INDEXER_HMAC_SECRET` | HMAC secret used to sign `/sync/transactions` requests |
 
 ## Flows covered
 
