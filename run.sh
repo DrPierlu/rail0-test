@@ -5,7 +5,7 @@
 #   cp .env.example .env && $EDITOR .env
 #   ./run.sh [suite]
 #
-# Suites: ruby | go | python | rust | typescript | cross | all (default)
+# Suites: api | ruby | go | python | rust | typescript | cross | all (default)
 #
 # The script sources .env automatically if present.
 
@@ -39,6 +39,15 @@ run_suite() {
     fail "$name FAILED"
     FAILED+=("$name")
   fi
+}
+
+# ── API (direct HTTP — no SDK) ────────────────────────────────────────────────
+run_api() {
+  cd "$ROOT/api"
+  bundle check > /dev/null 2>&1 || bundle install --quiet
+  bundle exec ruby -Itests -e '
+    Dir["tests/*_test.rb"].sort.each { |f| require_relative f }
+  '
 }
 
 # ── Ruby ──────────────────────────────────────────────────────────────────────
@@ -89,6 +98,7 @@ run_cross() {
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 case "$SUITE" in
+  api)        run_suite "API"         run_api        ;;
   ruby)       run_suite "Ruby"        run_ruby       ;;
   go)         run_suite "Go"          run_go         ;;
   python)     run_suite "Python"      run_python     ;;
@@ -96,6 +106,7 @@ case "$SUITE" in
   typescript) run_suite "TypeScript"  run_typescript ;;
   cross)      run_suite "Cross-SDK"   run_cross      ;;
   all)
+    run_suite "API"        run_api
     run_suite "Ruby"       run_ruby
     run_suite "Go"         run_go
     run_suite "Python"     run_python
@@ -104,7 +115,7 @@ case "$SUITE" in
     run_suite "Cross-SDK"  run_cross
     ;;
   *)
-    echo "Unknown suite: $SUITE  (ruby | go | python | cross | all)"
+    echo "Unknown suite: $SUITE  (api | ruby | go | python | rust | typescript | cross | all)"
     exit 1
     ;;
 esac

@@ -22,7 +22,7 @@ class AuthorizeVoidTest < Minitest::Test
     ok "payment_id=#{payment_id}"
 
     step "2. authorize/payload → sign → submit"
-    prep = client.payments.authorize_payload(payment_id)
+    prep = client.payments.authorize_prepare(payment_id)
     assert prep[:unsigned_transaction]
 
     client.payments.authorize(payment_id, signed_transaction: sign_eip1559(prep[:unsigned_transaction], account_key))
@@ -30,7 +30,7 @@ class AuthorizeVoidTest < Minitest::Test
     ok "authorized — capturable=#{auth.dig(:on_chain, :capturable_amount)}"
 
     step "3. void/payload → sign → submit"
-    prep = client.payments.void_payload(payment_id)
+    prep = client.payments.void_prepare(payment_id)
     assert prep[:unsigned_transaction]
 
     client.payments.void(payment_id, signed_transaction: sign_eip1559(prep[:unsigned_transaction], account_key))

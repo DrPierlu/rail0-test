@@ -1,0 +1,4 @@
+source "https://rubygems.org"
+
+gem "minitest", "~> 5"
+gem "eth",      "~> 0.5"

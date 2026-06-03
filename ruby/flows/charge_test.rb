@@ -21,7 +21,7 @@ class ChargeTest < Minitest::Test
     ok "payment_id=#{payment_id}"
 
     step "2. charge/payload → sign → submit"
-    prep = client.payments.charge_payload(payment_id)
+    prep = client.payments.charge_prepare(payment_id)
     assert prep[:unsigned_transaction]
 
     client.payments.charge(payment_id, signed_transaction: sign_eip1559(prep[:unsigned_transaction], account_key))
