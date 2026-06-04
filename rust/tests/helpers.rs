@@ -1,20 +1,21 @@
 //! Shared helpers for all Rust integration tests.
 
 use std::env;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
-use alloy::primitives::B256;
+use alloy::consensus::{SignableTransaction, TxEip1559};
+use alloy::eips::eip2718::Encodable2718;
+use alloy::network::TxSignerSync;
+use alloy::rlp::Decodable;
 use alloy::signers::local::PrivateKeySigner;
-use alloy::network::{EthereumWallet, TransactionBuilder};
-use alloy::consensus::TxEnvelope;
-use alloy::rpc::types::TransactionRequest;
 
 use rail0::{
-    ClientOptions, PaymentMethod, Rail0Client,
-    CreatePaymentRequest, PaymentInput, PayerSignatureRequest,
-    SignPaymentParams, TokenDomain,
+    ClientOptions, CreatePaymentInput, CreatePaymentRequest, PaymentMethod,
+    PayerSignatureRequest, Rail0Client, SignPaymentParams, TokenDomain,
     signing::{sign_authorize, sign_charge, hex_to_private_key},
 };
+
+pub use rail0::types_gen::PaymentSummary;
 
 pub const POLL_TIMEOUT: Duration  = Duration::from_secs(120);
 pub const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -82,95 +83,94 @@ pub async fn create_and_sign(
     pm: &PaymentMethod,
     mode: &str,
 ) -> String {
-    let chain_id: u64 = get_env_or("CHAIN_ID", "5042002").parse().unwrap();
-    let amount        = get_env_or("AMOUNT", "1000000");
+    let chain_id: i64 = get_env_or("CHAIN_ID", "5042002").parse().unwrap();
+    let amount        = get_env_or("AMOUNT", "1.00");
     let buyer_key     = buyer_private_key_bytes();
-    let buyer_addr    = format!("0x{}", hex::encode(
-        alloy::signers::local::PrivateKeySigner::from_slice(&buyer_key)
-            .unwrap()
-            .address()
-            .as_slice()
-    )).to_lowercase();
+    let buyer_addr    = format!("{}", buyer_signer().address());
 
-    let create = client.payments.create_payment(&CreatePaymentRequest {
-        payment: PaymentInput {
+    let create = client.payments.create(&CreatePaymentRequest {
+        payment: CreatePaymentInput {
             payer:  buyer_addr.clone(),
             payee:  pm.wallet_address.clone(),
             token:  pm.token_address.clone(),
             amount: amount.clone(),
         },
-        chain_id: chain_id as i64,
+        chain_id,
         mode: mode.to_string(),
-    }).await.expect("create_payment failed");
+    }).await.expect("create failed");
 
-    // Sign EIP-3009 payload
+    let sp = &create.signing_prepare;
     let domain = TokenDomain {
-        name:               create.signing_payload.domain.name.clone(),
-        version:            create.signing_payload.domain.version.clone(),
-        chain_id:           create.signing_payload.domain.chain_id as u64,
-        verifying_contract: create.signing_payload.domain.verifying_contract.clone(),
+        name:               sp.domain.name.clone(),
+        version:            sp.domain.version.clone(),
+        chain_id:           sp.domain.chain_id as u64,
+        verifying_contract: sp.domain.verifying_contract.clone(),
     };
+
     let sign_fn = if mode == "charge" { sign_charge } else { sign_authorize };
     let sig = sign_fn(&SignPaymentParams {
         private_key:      buyer_key,
         payment:          create.payment.clone(),
-        amount:           amount.parse().unwrap(),
-        nonce:            create.signing_payload.message.nonce.clone(),
+        amount:           sp.message.value.parse().unwrap(),
+        nonce:            sp.message.nonce.clone(),
         contract_address: create.rail0_contract.clone(),
         token_domain:     domain,
-        valid_after:      None,
-        valid_before:     None,
-    }).expect("sign_authorize failed");
+    }).expect("sign failed");
 
-    let sign_resp = client.payments.sign(&create.rail0_id, &PayerSignatureRequest {
+    let sign_resp = client.payments.sign(&create.payment_id, &PayerSignatureRequest {
         v: sig.v,
         r: sig.r.clone(),
         s: sig.s.clone(),
     }).await.expect("sign failed");
 
     assert_eq!(sign_resp.status, "signature_stored", "unexpected sign status");
-    create.rail0_id
+    create.payment_id
 }
 
 // ── EIP-1559 tx signing ───────────────────────────────────────────────────────
 
-pub async fn sign_eip1559(unsigned_hex: &str, signer: &PrivateKeySigner) -> String {
-    use alloy::consensus::TxEnvelope;
-    use alloy::rlp::Decodable;
-
-    let raw = hex::decode(unsigned_hex.trim_start_matches("0x"))
-        .expect("unsigned_hex is not valid hex");
-
-    let tx = TxEnvelope::decode(&mut raw.as_slice())
-        .expect("failed to decode unsigned tx");
-
-    let wallet = EthereumWallet::from(signer.clone());
-    let signed = wallet.sign_transaction(tx.into()).await
-        .expect("sign_transaction failed");
-
+pub fn sign_eip1559(unsigned_hex: &str, signer: &PrivateKeySigner) -> String {
+    let raw = alloy::hex::decode(unsigned_hex.trim_start_matches("0x"))
+        .expect("invalid hex");
+    // EIP-2718 typed tx: first byte is the type (0x02 for EIP-1559)
+    assert_eq!(raw.first().copied(), Some(2), "expected EIP-1559 tx (type 0x02)");
+    let mut tx = TxEip1559::decode(&mut &raw[1..])
+        .expect("failed to decode EIP-1559 tx body");
+    let sig = signer.sign_transaction_sync(&mut tx)
+        .expect("signing failed");
+    let signed = tx.into_signed(sig);
     let mut buf = Vec::new();
     signed.encode_2718(&mut buf);
-    format!("0x{}", hex::encode(buf))
+    format!("0x{}", alloy::hex::encode(buf))
 }
 
 // ── Polling ───────────────────────────────────────────────────────────────────
 
-pub async fn poll_until_status<'a>(
+pub async fn poll_until_status(
     client: &Rail0Client,
     payment_id: &str,
-    expected: &[&'a str],
+    expected: &[&str],
     waiting_for: &str,
-) -> rail0::PaymentResponse {
+) -> PaymentSummary {
     let deadline = std::time::Instant::now() + POLL_TIMEOUT;
     loop {
         let state = client.payments.get(payment_id).await
             .expect("poll get failed");
-        println!("  [poll] {waiting_for}: status={}", state.status);
+        let capturable = state.on_chain.as_ref()
+            .and_then(|v| v.get("capturable_amount"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("-");
+        println!("  [poll] {waiting_for}: status={} capturable={capturable}", state.status);
         if expected.contains(&state.status.as_str()) {
             return state;
         }
-        assert_ne!(state.status, "failed",
-            "payment failed: {} — {}", state.failure_code, state.failure_message);
+        if state.status == "failed" {
+            panic!(
+                "payment failed: {} — {}",
+                state.failure_code.as_deref().unwrap_or("?"),
+                state.failure_message.as_deref().unwrap_or("?")
+            );
+        }
         assert!(std::time::Instant::now() < deadline,
             "timed out waiting for {:?} (last: {})", expected, state.status);
         tokio::time::sleep(POLL_INTERVAL).await;

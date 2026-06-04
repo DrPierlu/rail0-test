@@ -20,10 +20,10 @@ async fn test_charge() {
     let payment_id = create_and_sign(&client, &pm, "charge").await;
     println!("  payment_id={payment_id}");
 
-    println!("→ charge/payload");
-    let prep = client.payments.charge_payload(&payment_id).await
-        .expect("charge_payload failed");
-    let signed = sign_eip1559(&prep.unsigned_transaction, &account_key).await;
+    println!("→ charge/prepare");
+    let prep = client.payments.charge_prepare(&payment_id).await
+        .expect("charge_prepare failed");
+    let signed = sign_eip1559(&prep.unsigned_transaction, &account_key);
     client.payments.charge(&payment_id, &SubmitTransactionRequest { signed_transaction: signed })
         .await.expect("charge failed");
 

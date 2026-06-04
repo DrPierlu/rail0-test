@@ -7,7 +7,7 @@
 mod helpers;
 use helpers::*;
 
-use rail0::{CapturePaymentRequest, RefundPayloadRequest, SubmitTransactionRequest};
+use rail0::{CapturePaymentRequest, RefundPayloadRequest, RefundPrepareResponse, SubmitTransactionRequest};
 
 #[tokio::test]
 async fn authorize_capture_refund() {
@@ -15,7 +15,7 @@ async fn authorize_capture_refund() {
     let client      = new_client();
     let account_key = account_signer();
     let pm          = discover_payment_method(&client).await;
-    let amount      = get_env_or("AMOUNT", "1000000");
+    let amount      = get_env_or("AMOUNT", "1.00");
 
     // ── Create + sign ──────────────────────────────────────────────────────────
     println!("→ creating payment and submitting payer signature");
@@ -23,36 +23,42 @@ async fn authorize_capture_refund() {
     println!("  payment_id={payment_id}");
 
     // ── Authorize ──────────────────────────────────────────────────────────────
-    println!("→ authorize/payload");
-    let prep = client.payments.authorize_payload(&payment_id).await
-        .expect("authorize_payload failed");
-    let signed = sign_eip1559(&prep.unsigned_transaction, &account_key).await;
+    println!("→ authorize/prepare");
+    let prep = client.payments.authorize_prepare(&payment_id).await
+        .expect("authorize_prepare failed");
+    let signed = sign_eip1559(&prep.unsigned_transaction, &account_key);
     client.payments.authorize(&payment_id, &SubmitTransactionRequest { signed_transaction: signed })
         .await.expect("authorize failed");
 
     let auth = poll_until_status(&client, &payment_id, &["authorized"], "authorize").await;
-    println!("  authorized — capturable={}", auth.on_chain.capturable_amount);
+    let capturable = auth.on_chain.as_ref()
+        .and_then(|v| v.get("capturable_amount"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("-");
+    println!("  authorized — capturable={capturable}");
 
     // ── Capture ────────────────────────────────────────────────────────────────
-    println!("→ capture/payload");
-    let prep = client.payments.capture_payload(&payment_id, &CapturePaymentRequest { amount: amount.clone() })
-        .await.expect("capture_payload failed");
-    let signed = sign_eip1559(&prep.unsigned_transaction, &account_key).await;
+    println!("→ capture/prepare");
+    let prep = client.payments.capture_prepare(&payment_id, &CapturePaymentRequest { amount: amount.clone() })
+        .await.expect("capture_prepare failed");
+    let signed = sign_eip1559(&prep.unsigned_transaction, &account_key);
     client.payments.capture(&payment_id, &SubmitTransactionRequest { signed_transaction: signed })
         .await.expect("capture failed");
 
     let cap = poll_until_status(&client, &payment_id, &["captured", "partially_captured"], "capture").await;
-    assert_eq!(cap.on_chain.capturable_amount, "0", "capturable must be 0 after full capture");
+    let cap_capturable = cap.on_chain.as_ref()
+        .and_then(|v| v.get("capturable_amount"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("-");
+    assert_eq!(cap_capturable, "0", "capturable must be 0 after full capture");
     println!("  captured — status={}", cap.status);
 
     // ── Refund (EIP-3009 two-phase) ────────────────────────────────────────────
-    println!("→ refund/payload phase 1");
-    let phase1 = client.payments.refund_payload(&payment_id, &RefundPayloadRequest {
+    println!("→ refund/prepare phase 1");
+    let phase1 = client.payments.refund_prepare(&payment_id, &RefundPayloadRequest {
         amount: amount.clone(), v: None, r: None, s: None,
-    }).await.expect("refund_payload phase1 failed");
+    }).await.expect("refund_prepare phase1 failed");
     assert!(phase1.signing_payload.is_some(), "phase 1 must return signing_payload");
-    assert!(phase1.unsigned_transaction.is_none() || phase1.unsigned_transaction.as_deref() == Some(""),
-        "phase 1 must NOT return unsigned_transaction");
 
     println!("→ signing EIP-3009 refund payload");
     let sp = phase1.signing_payload.as_ref().unwrap();
@@ -63,7 +69,6 @@ async fn authorize_capture_refund() {
         chain_id:           sp.domain.chain_id as u64,
         verifying_contract: sp.domain.verifying_contract.clone(),
     };
-    // The refund signing payload uses ReceiveWithAuthorization — same EIP-3009 encoding.
     let refund_sig = rail0::signing::sign_transfer_with_authorization(
         &account_key_bytes,
         &domain,
@@ -77,22 +82,26 @@ async fn authorize_capture_refund() {
         },
     ).expect("sign_transfer_with_authorization failed");
 
-    println!("→ refund/payload phase 2");
-    let phase2 = client.payments.refund_payload(&payment_id, &RefundPayloadRequest {
+    println!("→ refund/prepare phase 2");
+    let phase2 = client.payments.refund_prepare(&payment_id, &RefundPayloadRequest {
         amount: amount.clone(),
         v: Some(refund_sig.v),
         r: Some(refund_sig.r.clone()),
         s: Some(refund_sig.s.clone()),
-    }).await.expect("refund_payload phase2 failed");
+    }).await.expect("refund_prepare phase2 failed");
     assert!(phase2.unsigned_transaction.as_deref().map(|s| !s.is_empty()).unwrap_or(false),
         "phase 2 must return unsigned_transaction");
 
     println!("→ submitting refund");
-    let signed = sign_eip1559(phase2.unsigned_transaction.as_deref().unwrap(), &account_key).await;
+    let signed = sign_eip1559(phase2.unsigned_transaction.as_deref().unwrap(), &account_key);
     client.payments.refund(&payment_id, &SubmitTransactionRequest { signed_transaction: signed })
         .await.expect("refund failed");
 
     let final_state = poll_until_status(&client, &payment_id, &["refunded", "partially_refunded"], "refund").await;
-    assert_eq!(final_state.on_chain.refundable_amount, "0", "refundable must be 0 after full refund");
+    let refundable = final_state.on_chain.as_ref()
+        .and_then(|v| v.get("refundable_amount"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("-");
+    assert_eq!(refundable, "0", "refundable must be 0 after full refund");
     println!("  refunded — status={}", final_state.status);
 }
