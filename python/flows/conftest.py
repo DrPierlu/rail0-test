@@ -70,8 +70,8 @@ def create_and_sign(client, payment_method, buyer_account, chain_id: int, amount
     create_resp = client.payments.create_payment({
         "payment": {
             "payer":  buyer_account.address.lower(),
-            "payee":  payment_method["walletAddress"],
-            "token":  payment_method["tokenAddress"],
+            "payee":  payment_method["wallet_address"],
+            "token":  payment_method["token_address"],
             "amount": amount,
         },
         "chain_id": chain_id,
@@ -79,7 +79,9 @@ def create_and_sign(client, payment_method, buyer_account, chain_id: int, amount
     })
     payment_id = create_resp["rail0_id"]
 
-    sig = sign_payload(buyer_account.key.hex(), create_resp["signing_payload"])
+    # signing_payload is returned by the authorize/prepare endpoint, not the create response
+    prepare_resp = client.payments.authorize_prepare(payment_id)
+    sig = sign_payload(buyer_account.key.hex(), prepare_resp["signing_payload"])
     signature = "0x" + sig["r"][2:] + sig["s"][2:] + format(sig["v"], "02x")
 
     sign_resp = client.payments.sign(payment_id, {"signature": signature})
@@ -90,7 +92,9 @@ def create_and_sign(client, payment_method, buyer_account, chain_id: int, amount
 def sign_eip1559(unsigned_hex: str, account) -> str:
     """Sign an unsigned EIP-1559 transaction with eth_account."""
     from eth_account._utils.typed_transactions import TypedTransaction
-    signed = account.sign_transaction({"rawTransaction": unsigned_hex})
+    unsigned_bytes = bytes.fromhex(unsigned_hex.removeprefix("0x"))
+    tx = TypedTransaction.from_bytes(unsigned_bytes)
+    signed = account.sign_transaction(tx.as_dict())
     return signed.rawTransaction.hex()
 
 
