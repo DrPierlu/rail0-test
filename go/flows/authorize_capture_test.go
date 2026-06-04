@@ -26,9 +26,9 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 
 	// ── Authorize ──────────────────────────────────────────────────────────────
 	t.Log("→ authorize/payload")
-	prep, err := client.Payments.AuthorizePayload(context.Background(), paymentID)
+	prep, err := client.Payments.AuthorizePrepare(context.Background(), paymentID)
 	if err != nil {
-		t.Fatalf("AuthorizePayload: %v", err)
+		t.Fatalf("AuthorizePrepare: %v", err)
 	}
 	signedAuth := signEIP1559(t, prep.UnsignedTransaction, accountKey)
 	if _, err := client.Payments.Authorize(context.Background(), paymentID, rail0.SubmitTransactionRequest{
@@ -41,11 +41,11 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 
 	// ── Capture ────────────────────────────────────────────────────────────────
 	t.Log("→ capture/payload")
-	prep, err = client.Payments.CapturePayload(context.Background(), paymentID, rail0.CapturePaymentRequest{
+	prep, err = client.Payments.CapturePrepare(context.Background(), paymentID, rail0.CapturePaymentRequest{
 		Amount: amount,
 	})
 	if err != nil {
-		t.Fatalf("CapturePayload: %v", err)
+		t.Fatalf("CapturePrepare: %v", err)
 	}
 	signedCap := signEIP1559(t, prep.UnsignedTransaction, accountKey)
 	if _, err := client.Payments.Capture(context.Background(), paymentID, rail0.SubmitTransactionRequest{
@@ -61,11 +61,11 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 
 	// ── Refund (EIP-3009 two-phase) ────────────────────────────────────────────
 	t.Log("→ refund/payload phase 1")
-	phase1, err := client.Payments.RefundPayload(context.Background(), paymentID, rail0.RefundPayloadRequest{
+	phase1, err := client.Payments.RefundPrepare(context.Background(), paymentID, rail0.RefundPayloadRequest{
 		Amount: amount,
 	})
 	if err != nil {
-		t.Fatalf("RefundPayload phase1: %v", err)
+		t.Fatalf("RefundPrepare phase1: %v", err)
 	}
 	if phase1.SigningPayload == nil {
 		t.Fatal("phase 1 must return signing_payload")
@@ -81,14 +81,14 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 	}
 
 	t.Log("→ refund/payload phase 2")
-	phase2, err := client.Payments.RefundPayload(context.Background(), paymentID, rail0.RefundPayloadRequest{
+	phase2, err := client.Payments.RefundPrepare(context.Background(), paymentID, rail0.RefundPayloadRequest{
 		Amount: amount,
 		V:      refundSig.V,
 		R:      refundSig.R,
 		S:      refundSig.S,
 	})
 	if err != nil {
-		t.Fatalf("RefundPayload phase2: %v", err)
+		t.Fatalf("RefundPrepare phase2: %v", err)
 	}
 	if phase2.UnsignedTransaction == "" {
 		t.Fatal("phase 2 must return unsigned_transaction")

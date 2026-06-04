@@ -23,9 +23,9 @@ func TestCharge(t *testing.T) {
 	t.Logf("  payment_id=%s", paymentID)
 
 	t.Log("→ charge/payload")
-	prep, err := client.Payments.ChargePayload(context.Background(), paymentID)
+	prep, err := client.Payments.ChargePrepare(context.Background(), paymentID)
 	if err != nil {
-		t.Fatalf("ChargePayload: %v", err)
+		t.Fatalf("ChargePrepare: %v", err)
 	}
 	signed := signEIP1559(t, prep.UnsignedTransaction, accountKey)
 	if _, err := client.Payments.Charge(context.Background(), paymentID, rail0.SubmitTransactionRequest{
