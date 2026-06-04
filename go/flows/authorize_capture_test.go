@@ -8,8 +8,11 @@ package flows_test
 
 import (
 	"context"
+	"encoding/hex"
+	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	rail0 "github.com/rail0/go-sdk"
 )
 
@@ -75,9 +78,34 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 	}
 
 	t.Log("→ signing EIP-3009 refund payload")
-	refundSig, err := rail0.SignPayload(accountKey, *phase1.SigningPayload)
+	privBytes, err := rail0.HexToPrivateKey(hex.EncodeToString(crypto.FromECDSA(accountKey)))
 	if err != nil {
-		t.Fatalf("SignPayload for refund: %v", err)
+		t.Fatalf("HexToPrivateKey: %v", err)
+	}
+	rsp := phase1.SigningPayload
+	refValue := new(big.Int)
+	refValue.SetString(rsp.Message.Value, 10)
+	refValidAfter := new(big.Int)
+	refValidAfter.SetString(rsp.Message.ValidAfter, 10)
+	refValidBefore := new(big.Int)
+	refValidBefore.SetString(rsp.Message.ValidBefore, 10)
+	refundSig, err := rail0.SignReceiveWithAuthorizationRaw(rail0.SignReceiveParams{
+		PrivateKey: privBytes,
+		TokenDomain: rail0.TokenDomain{
+			Name:              rsp.Domain.Name,
+			Version:           rsp.Domain.Version,
+			ChainID:           uint64(rsp.Domain.ChainId),
+			VerifyingContract: rsp.Domain.VerifyingContract,
+		},
+		From:        rsp.Message.From,
+		To:          rsp.Message.To,
+		Value:       refValue,
+		ValidAfter:  refValidAfter,
+		ValidBefore: refValidBefore,
+		Nonce:       rsp.Message.Nonce,
+	})
+	if err != nil {
+		t.Fatalf("SignReceiveWithAuthorizationRaw for refund: %v", err)
 	}
 
 	t.Log("→ refund/payload phase 2")

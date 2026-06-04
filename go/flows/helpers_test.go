@@ -108,11 +108,38 @@ func createAndSign(t *testing.T, client *rail0.Client, pm rail0.PaymentMethod, m
 		t.Fatalf("CreatePayment: %v", err)
 	}
 
-	sig, err := rail0.SignPayload(buyerKey, create.SigningPayload)
+	privBytes, err := rail0.HexToPrivateKey(hex.EncodeToString(crypto.FromECDSA(buyerKey)))
 	if err != nil {
-		t.Fatalf("SignPayload: %v", err)
+		t.Fatalf("HexToPrivateKey: %v", err)
 	}
-	signature := "0x" + hex.EncodeToString(sig.Bytes())
+	sp := create.SigningPayload
+	value := new(big.Int)
+	value.SetString(sp.Message.Value, 10)
+	validAfter := new(big.Int)
+	validAfter.SetString(sp.Message.ValidAfter, 10)
+	validBefore := new(big.Int)
+	validBefore.SetString(sp.Message.ValidBefore, 10)
+	domain := rail0.TokenDomain{
+		Name:              sp.Domain.Name,
+		Version:           sp.Domain.Version,
+		ChainID:           uint64(sp.Domain.ChainId),
+		VerifyingContract: sp.Domain.VerifyingContract,
+	}
+	sig, err := rail0.SignTransferWithAuthorization(privBytes, domain, rail0.SignTransferParams{
+		From:        sp.Message.From,
+		To:          sp.Message.To,
+		Value:       value,
+		ValidAfter:  validAfter,
+		ValidBefore: validBefore,
+		Nonce:       sp.Message.Nonce,
+	})
+	if err != nil {
+		t.Fatalf("SignTransferWithAuthorization: %v", err)
+	}
+	rBytes, _ := hex.DecodeString(strings.TrimPrefix(sig.R, "0x"))
+	sBytes, _ := hex.DecodeString(strings.TrimPrefix(sig.S, "0x"))
+	sigBytes := append(append(rBytes, sBytes...), byte(sig.V))
+	signature := "0x" + hex.EncodeToString(sigBytes)
 
 	signResp, err := client.Payments.Sign(context.Background(), create.Rail0Id, rail0.PayerSignatureRequest{
 		Signature: signature,

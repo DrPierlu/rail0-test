@@ -1,8 +1,7 @@
 """Flow: create → sign → authorize → capture → refund (EIP-3009)"""
 
 import pytest
-from .conftest import create_and_sign, poll_until_status, sign_eip1559
-from rail0.signing import sign_payload
+from .conftest import create_and_sign, poll_until_status, sign_eip1559, sign_payload
 
 
 def test_authorize_capture_refund(client, buyer_account, account_account, payment_method, amount, chain_id):

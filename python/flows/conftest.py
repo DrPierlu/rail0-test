@@ -7,7 +7,6 @@ import pytest
 from eth_account import Account as EthAccount
 
 from rail0 import Rail0Client
-from rail0.signing import sign_payload
 
 
 # ── Environment helpers ──────────────────────────────────────────────────────
@@ -44,7 +43,7 @@ def payment_method(client):
 
     methods = client.accounts.payment_methods(account_id)
     for m in methods:
-        if m.get("chainSlug") == chain_slug and m.get("tokenSymbol") == token_sym:
+        if m.get("chain_slug") == chain_slug and m.get("token_symbol") == token_sym:
             return m
     raise RuntimeError(f"No {token_sym} payment method on {chain_slug}")
 
@@ -65,9 +64,72 @@ POLL_TIMEOUT  = 120
 POLL_INTERVAL = 2
 
 
+def sign_payload(private_key: str, signing_payload: dict) -> dict:
+    """Sign an EIP-712 signing_payload and return {v, r, s}."""
+    import coincurve
+    from Crypto.Hash import keccak as _keccak_lib
+
+    def keccak256(data: bytes) -> bytes:
+        k = _keccak_lib.new(digest_bits=256)
+        k.update(data)
+        return k.digest()
+
+    def hex_to_bytes(h: str) -> bytes:
+        return bytes.fromhex(h[2:] if h.startswith("0x") else h)
+
+    def abi_address(addr: str) -> bytes:
+        return b"\x00" * 12 + hex_to_bytes(addr)
+
+    def abi_uint256(v: int) -> bytes:
+        return v.to_bytes(32, "big")
+
+    d = signing_payload["domain"]
+    m = signing_payload["message"]
+    primary_type = signing_payload.get("primaryType", "TransferWithAuthorization")
+
+    domain_type   = "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"
+    transfer_type = "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
+    receive_type  = "ReceiveWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
+
+    domain_typehash   = keccak256(domain_type.encode())
+    transfer_typehash = keccak256(transfer_type.encode())
+    receive_typehash  = keccak256(receive_type.encode())
+
+    domain_hash = keccak256(
+        domain_typehash
+        + keccak256(d["name"].encode())
+        + keccak256(d["version"].encode())
+        + abi_uint256(d["chainId"])
+        + abi_address(d["verifyingContract"])
+    )
+
+    typehash = receive_typehash if primary_type == "ReceiveWithAuthorization" else transfer_typehash
+    struct_hash = keccak256(
+        typehash
+        + abi_address(m["from"])
+        + abi_address(m["to"])
+        + abi_uint256(int(m["value"]))
+        + abi_uint256(int(m["validAfter"]))
+        + abi_uint256(int(m["validBefore"]))
+        + hex_to_bytes(m["nonce"])
+    )
+
+    digest = keccak256(b"\x19\x01" + domain_hash + struct_hash)
+
+    key_hex = private_key[2:] if private_key.startswith("0x") else private_key
+    key = coincurve.PrivateKey(bytes.fromhex(key_hex))
+    sig = key.sign_recoverable(digest, hasher=None)
+
+    recovery_id = sig[64]
+    r = "0x" + sig[:32].hex()
+    s = "0x" + sig[32:64].hex()
+    v = recovery_id + 27
+    return {"v": v, "r": r, "s": s}
+
+
 def create_and_sign(client, payment_method, buyer_account, chain_id: int, amount: str, mode: str = "authorize") -> str:
     """Create a payment and submit the payer's EIP-3009 signature. Returns payment_id."""
-    create_resp = client.payments.create_payment({
+    create_resp = client.payments.create({
         "payment": {
             "payer":  buyer_account.address.lower(),
             "payee":  payment_method["wallet_address"],
@@ -79,9 +141,7 @@ def create_and_sign(client, payment_method, buyer_account, chain_id: int, amount
     })
     payment_id = create_resp["rail0_id"]
 
-    # signing_payload is returned by the authorize/prepare endpoint, not the create response
-    prepare_resp = client.payments.authorize_prepare(payment_id)
-    sig = sign_payload(buyer_account.key.hex(), prepare_resp["signing_payload"])
+    sig = sign_payload(buyer_account.key.hex(), create_resp["signing_payload"])
     signature = "0x" + sig["r"][2:] + sig["s"][2:] + format(sig["v"], "02x")
 
     sign_resp = client.payments.sign(payment_id, {"signature": signature})
