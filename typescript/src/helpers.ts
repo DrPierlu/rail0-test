@@ -40,7 +40,7 @@ export async function discoverPaymentMethod(client: Rail0Client): Promise<Paymen
   const symbol    = getEnv('TOKEN_SYMBOL', 'USDC')
 
   const methods = await client.accounts.paymentMethods(accountId)
-  const pm = methods.find((m) => m.chainSlug === chainSlug && m.tokenSymbol === symbol)
+  const pm = methods.find((m) => m.chain_slug === chainSlug && m.token_symbol === symbol)
   if (!pm) throw new Error(`no ${symbol} payment method on ${chainSlug}`)
   return pm
 }
@@ -56,26 +56,26 @@ export async function createAndSign(
   const chainId = parseInt(getEnv('CHAIN_ID', '5042002'), 10)
   const buyer   = buyerWallet()
 
-  const createResp = await client.payments.createPayment({
+  const createResp = await client.payments.create({
     payment: {
       payer:  buyer.address.toLowerCase(),
-      payee:  pm.walletAddress,
-      token:  pm.tokenAddress,
+      payee:  pm.wallet_address,
+      token:  pm.token_address,
       amount,
     },
-    chainId,
+    chain_id: chainId,
     mode,
   })
 
   const sig = signPayment(getEnv('BUYER_PRIVATE_KEY') as `0x${string}`, createResp)
   const signature = `0x${sig.r.slice(2)}${sig.s.slice(2)}${sig.v.toString(16).padStart(2, '0')}`
 
-  const signResp = await client.payments.sign(createResp.rail0Id, { signature })
+  const signResp = await client.payments.sign(createResp.rail0_id, { signature })
   if (signResp.status !== 'signature_stored') {
     throw new Error(`unexpected sign status: ${signResp.status}`)
   }
 
-  return { paymentId: createResp.rail0Id, createResp }
+  return { paymentId: createResp.rail0_id, createResp }
 }
 
 // ── EIP-1559 tx signing ───────────────────────────────────────────────────────
@@ -89,18 +89,18 @@ export async function signEip1559(unsignedHex: string, wallet: ethers.Wallet): P
 
 export function signRefundPayload(
   privateKey: string,
-  signingPayload: NonNullable<Awaited<ReturnType<Rail0Client['payments']['refundPayload']>>['signingPayload']>,
+  signingPayload: NonNullable<Awaited<ReturnType<Rail0Client['payments']['refundPrepare']>>['signing_payload']>,
 ): { v: number; r: string; s: string } {
   // Refund uses ReceiveWithAuthorization — same EIP-712 structure as authorize.
   // We reuse signPayment by constructing a compatible CreatePaymentResponse shape.
   const fakeResp = {
-    signingPayload,
-    rail0Id:       '',
-    configHash:    '',
-    rail0Contract: '',
-    payment:       {} as any,
-    chainId:       0,
-    mode:          'authorize' as const,
+    signing_payload: signingPayload,
+    rail0_id:        '',
+    configHash:      '',
+    rail0Contract:   '',
+    payment:         {} as any,
+    chain_id:        0,
+    mode:            'authorize' as const,
   } satisfies CreatePaymentResponse
 
   const sig = signPayment(privateKey as `0x${string}`, fakeResp)
@@ -121,7 +121,7 @@ export async function pollUntilStatus(
     console.log(`  [poll] ${waitingFor}: status=${state.status}`)
     if (expected.includes(state.status)) return state
     if (state.status === 'failed') {
-      throw new Error(`payment failed: ${state.failureCode} — ${state.failureMessage}`)
+      throw new Error(`payment failed: ${state.failure_code} — ${state.failure_message}`)
     }
     if (Date.now() >= deadline) {
       throw new Error(`timed out waiting for [${expected.join(', ')}] (last: ${state.status})`)

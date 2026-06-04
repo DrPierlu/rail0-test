@@ -24,46 +24,46 @@ test('authorize → capture → refund', async () => {
 
   // ── Authorize ──────────────────────────────────────────────────────────────
   console.log('→ authorize/payload')
-  const prep = await client.payments.authorizePayload(paymentId)
-  expect(prep.unsignedTransaction).toBeTruthy()
+  const prep = await client.payments.authorizePrepare(paymentId)
+  expect(prep.unsigned_transaction).toBeTruthy()
 
-  const signedAuth = await signEip1559(prep.unsignedTransaction, accWallet)
+  const signedAuth = await signEip1559(prep.unsigned_transaction, accWallet)
   await client.payments.authorize(paymentId, { signedTransaction: signedAuth })
 
   const auth = await pollUntilStatus(client, paymentId, ['authorized'], 'authorize')
-  console.log(`  authorized — capturable=${auth.onChain?.capturableAmount}`)
+  console.log(`  authorized — capturable=${auth.on_chain?.capturable_amount}`)
 
   // ── Capture ────────────────────────────────────────────────────────────────
   console.log('→ capture/payload')
-  const prepCap = await client.payments.capturePayload(paymentId, { amount })
-  expect(prepCap.unsignedTransaction).toBeTruthy()
+  const prepCap = await client.payments.capturePrepare(paymentId, { amount })
+  expect(prepCap.unsigned_transaction).toBeTruthy()
 
-  const signedCap = await signEip1559(prepCap.unsignedTransaction, accWallet)
+  const signedCap = await signEip1559(prepCap.unsigned_transaction, accWallet)
   await client.payments.capture(paymentId, { signedTransaction: signedCap })
 
   const cap = await pollUntilStatus(client, paymentId, ['captured', 'partially_captured'], 'capture')
-  expect(cap.onChain?.capturableAmount).toBe('0')
+  expect(cap.on_chain?.capturable_amount).toBe('0')
   console.log(`  captured — status=${cap.status}`)
 
   // ── Refund (EIP-3009 two-phase) ────────────────────────────────────────────
   console.log('→ refund/payload phase 1')
-  const phase1 = await client.payments.refundPayload(paymentId, { amount })
-  expect(phase1.signingPayload).toBeTruthy()
-  expect((phase1 as any).unsignedTransaction).toBeFalsy()
+  const phase1 = await client.payments.refundPrepare(paymentId, { amount })
+  expect(phase1.signing_payload).toBeTruthy()
+  expect((phase1 as any).unsigned_transaction).toBeFalsy()
 
   console.log('→ signing EIP-3009 refund payload with TS SDK')
-  const vrs = signRefundPayload(getEnv('ACCOUNT_PRIVATE_KEY'), phase1.signingPayload!)
+  const vrs = signRefundPayload(getEnv('ACCOUNT_PRIVATE_KEY'), phase1.signing_payload!)
 
   console.log('→ refund/payload phase 2')
-  const phase2 = await client.payments.refundPayload(paymentId, { amount, ...vrs })
-  expect(phase2.unsignedTransaction).toBeTruthy()
+  const phase2 = await client.payments.refundPrepare(paymentId, { amount, ...vrs })
+  expect(phase2.unsigned_transaction).toBeTruthy()
 
   console.log('→ submitting refund')
-  const signedRef = await signEip1559(phase2.unsignedTransaction!, accWallet)
+  const signedRef = await signEip1559(phase2.unsigned_transaction!, accWallet)
   await client.payments.refund(paymentId, { signedTransaction: signedRef })
 
   const final = await pollUntilStatus(client, paymentId, ['refunded', 'partially_refunded'], 'refund')
-  expect(final.onChain?.refundableAmount).toBe('0')
+  expect(final.on_chain?.refundable_amount).toBe('0')
   console.log(`  refunded — status=${final.status}`)
 })
 
@@ -75,17 +75,17 @@ test('authorize → void', async () => {
 
   const { paymentId } = await createAndSign(client, pm, 'authorize', amount)
 
-  const prep = await client.payments.authorizePayload(paymentId)
+  const prep = await client.payments.authorizePrepare(paymentId)
   await client.payments.authorize(paymentId, {
-    signedTransaction: await signEip1559(prep.unsignedTransaction, accWallet),
+    signedTransaction: await signEip1559(prep.unsigned_transaction, accWallet),
   })
   await pollUntilStatus(client, paymentId, ['authorized'], 'authorize')
 
-  const prepVoid = await client.payments.voidPayload(paymentId)
+  const prepVoid = await client.payments.voidPrepare(paymentId)
   await client.payments.void(paymentId, {
-    signedTransaction: await signEip1559(prepVoid.unsignedTransaction, accWallet),
+    signedTransaction: await signEip1559(prepVoid.unsigned_transaction, accWallet),
   })
   const final = await pollUntilStatus(client, paymentId, ['voided'], 'void')
-  expect(final.onChain?.capturableAmount).toBe('0')
+  expect(final.on_chain?.capturable_amount).toBe('0')
   console.log(`  voided — status=${final.status}`)
 })

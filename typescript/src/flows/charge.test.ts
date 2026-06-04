@@ -22,10 +22,10 @@ test('charge (one-shot)', async () => {
   console.log(`  payment_id=${paymentId}`)
 
   console.log('→ charge/payload')
-  const prep = await client.payments.chargePayload(paymentId)
-  expect(prep.unsignedTransaction).toBeTruthy()
+  const prep = await client.payments.chargePrepare(paymentId)
+  expect(prep.unsigned_transaction).toBeTruthy()
 
-  const signed = await signEip1559(prep.unsignedTransaction, accWallet)
+  const signed = await signEip1559(prep.unsigned_transaction, accWallet)
   await client.payments.charge(paymentId, { signedTransaction: signed })
 
   const final = await pollUntilStatus(client, paymentId, ['charged'], 'charge')
