@@ -20,7 +20,7 @@ class ChargeTest < Minitest::Test
     payment_id, _pm = create_and_sign_payment(mode: "charge")
     ok "payment_id=#{payment_id}"
 
-    step "2. charge/payload → sign → submit"
+    step "2. charge/prepare → sign → submit"
     prep = client.payments.charge_prepare(payment_id)
     assert prep[:unsigned_transaction]
 

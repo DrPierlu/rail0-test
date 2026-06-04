@@ -21,7 +21,7 @@ class AuthorizeVoidTest < Minitest::Test
     payment_id, _pm = create_and_sign_payment(mode: "authorize")
     ok "payment_id=#{payment_id}"
 
-    step "2. authorize/payload → sign → submit"
+    step "2. authorize/prepare → sign → submit"
     prep = client.payments.authorize_prepare(payment_id)
     assert prep[:unsigned_transaction]
 
@@ -29,7 +29,7 @@ class AuthorizeVoidTest < Minitest::Test
     auth = poll_until_status(payment_id, "authorized", waiting_for: "authorize")
     ok "authorized — capturable=#{auth.dig(:on_chain, :capturable_amount)}"
 
-    step "3. void/payload → sign → submit"
+    step "3. void/prepare → sign → submit"
     prep = client.payments.void_prepare(payment_id)
     assert prep[:unsigned_transaction]
 

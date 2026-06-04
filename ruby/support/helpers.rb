@@ -67,10 +67,10 @@ module IntegrationHelpers
     "0x#{sig.r[2..]}#{sig.s[2..]}#{sig.v.to_s(16).rjust(2, '0')}"
   end
 
-  # Returns { v:, r:, s: } suitable for refund_payload phase 2.
+  # Returns { signature: } as a 0x-prefixed hex string, suitable for refund_prepare phase 2.
   def sign_payload_vrs(private_key, signing_payload)
     sig = Rail0::Signing.sign_payload(private_key, signing_payload)
-    { v: sig.v, r: sig.r, s: sig.s }
+    { signature: sig.to_hex }
   end
 
   # ── EIP-1559 tx signing ──────────────────────────────────────────────────────

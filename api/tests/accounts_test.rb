@@ -136,7 +136,7 @@ end
 # ── GET /accounts/:id/wallets/:wallet_token_id ────────────────────────────────
 
 describe "GET /accounts/:id/wallets/:wallet_token_id" do
-  it "returns 404 for a nonexistent wallet_token_id" do
+  it "returns 422 for a nonexistent wallet_token_id" do
     get "/accounts/#{ACCOUNT_ID}/wallets/#{NONEXISTENT_ID}"
     assert_equal 422, last_response.status
     assert_equal "wallet_not_found", json_response[:code]

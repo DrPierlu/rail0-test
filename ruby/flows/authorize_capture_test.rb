@@ -24,7 +24,7 @@ class AuthorizeCaptureTest < Minitest::Test
     ok "payment_id=#{payment_id}"
 
     # ── 2. Authorize ──────────────────────────────────────────────────────────
-    step "2. authorize/payload → sign → submit"
+    step "2. authorize/prepare → sign → submit"
     prep = client.payments.authorize_prepare(payment_id)
     assert prep[:unsigned_transaction]
 
@@ -33,7 +33,7 @@ class AuthorizeCaptureTest < Minitest::Test
     ok "authorized — capturable=#{auth.dig(:on_chain, :capturable_amount)}"
 
     # ── 3. Capture ────────────────────────────────────────────────────────────
-    step "3. capture/payload → sign → submit"
+    step "3. capture/prepare → sign → submit"
     prep = client.payments.capture_prepare(payment_id, amount: amount)
     assert prep[:unsigned_transaction]
 
@@ -44,12 +44,12 @@ class AuthorizeCaptureTest < Minitest::Test
     assert_equal "0", cap.dig(:on_chain, :capturable_amount), "capturable must be 0 after full capture"
 
     # ── 4. Refund (EIP-3009 two-phase) ────────────────────────────────────────
-    step "4. refund/payload phase 1 (get signing payload)"
+    step "4. refund/prepare phase 1 (get signing payload)"
     phase1 = client.payments.refund_prepare(payment_id, amount: amount)
     assert phase1[:signing_payload], "phase 1 must return signing_payload"
     refute phase1[:unsigned_transaction], "phase 1 must NOT return unsigned_transaction"
 
-    step "4. refund/payload phase 2 (get unsigned tx)"
+    step "4. refund/prepare phase 2 (get unsigned tx)"
     vrs    = sign_payload_vrs(ENV.fetch("ACCOUNT_PRIVATE_KEY"), phase1[:signing_payload])
     phase2 = client.payments.refund_prepare(payment_id, amount: amount, **vrs)
     assert phase2[:unsigned_transaction], "phase 2 must return unsigned_transaction"

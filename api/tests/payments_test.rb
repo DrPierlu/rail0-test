@@ -112,14 +112,18 @@ describe "POST /payments" do
     assert_equal 201, last_response.status
     body = json_response
     assert_match(/\A0x[0-9a-f]{64}\z/, body[:rail0_id])
-    assert_equal "unsigned", body[:status]
-    assert_equal "authorize", body[:mode]
     assert body[:signing_payload]
+    get "/payments/#{body[:rail0_id]}"
+    state = json_response
+    assert_equal "unsigned", state[:status]
+    assert_equal "authorize", state[:mode]
   end
 
   it "creates a payment in charge mode" do
     post_json "/payments", valid_body.merge(mode: "charge")
     assert_equal 201, last_response.status
+    body = json_response
+    get "/payments/#{body[:rail0_id]}"
     assert_equal "charge", json_response[:mode]
   end
 end
