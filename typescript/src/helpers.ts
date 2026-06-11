@@ -121,7 +121,7 @@ export async function pollUntilStatus(
     console.log(`  [poll] ${waitingFor}: status=${state.status}`)
     if (expected.includes(state.status)) return state
     if (state.status === 'failed') {
-      throw new Error(`payment failed: ${state.failure_code} — ${state.failure_message}`)
+      throw new Error(`payment failed: ${state.last_error_code} — ${state.last_error_message}`)
     }
     if (Date.now() >= deadline) {
       throw new Error(`timed out waiting for [${expected.join(', ')}] (last: ${state.status})`)

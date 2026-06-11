@@ -49,9 +49,10 @@ module ApiHelpers
     { "X-Rail0-Timestamp" => ts, "X-Rail0-Signature" => sig }
   end
 
-  def post_sync(body = {})
+  def put_sync(chain_id, tx_hash, body = {})
     body_str = body.to_json
-    post_json "/sync/transactions", body, headers: hmac_headers(body_str).merge("Content-Type" => "application/json")
+    put_json "/sync/chains/#{chain_id}/transactions/#{tx_hash}", body,
+             headers: hmac_headers(body_str).merge("Content-Type" => "application/json")
   end
 
   # Issues a fresh nonce via POST /nonces and returns the nonce string.

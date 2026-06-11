@@ -118,7 +118,7 @@ module IntegrationHelpers
       step "  [poll] #{waiting_for}: status=#{status}#{txs.empty? ? '' : " tx=[#{txs}]"}"
       return state if expected.include?(status)
       if status == "failed"
-        raise "Payment #{payment_id} failed — code=#{state[:failure_code]} msg=#{state[:failure_message]}"
+        raise "Payment #{payment_id} failed — code=#{state[:last_error_code]} msg=#{state[:last_error_message]}"
       end
       raise "Timed out after #{timeout}s waiting for #{expected.join('/')} (last: #{status})" if Time.now >= deadline
       sleep interval
