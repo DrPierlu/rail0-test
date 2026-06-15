@@ -165,19 +165,19 @@ func TestRubySignGoSubmit(t *testing.T) {
 
 	// ── Discover payment method ────────────────────────────────────────────────
 	t.Log("→ discovering payment method")
-	methods, err := client.Accounts.PaymentMethods(context.Background(), accountID)
+	tokens, err := client.Accounts.Wallets(context.Background(), accountID)
 	if err != nil {
-		t.Fatalf("PaymentMethods: %v", err)
+		t.Fatalf("Wallets: %v", err)
 	}
-	var pm rail0.PaymentMethod
-	for _, m := range methods {
+	var pm rail0.WalletToken
+	for _, m := range tokens {
 		if m.ChainSlug == chainSlug && m.TokenSymbol == symbol {
 			pm = m
 			break
 		}
 	}
-	if pm.WalletAddress == "" {
-		t.Fatalf("no %s payment method on %s", symbol, chainSlug)
+	if pm.Address == "" {
+		t.Fatalf("no %s wallet token on %s", symbol, chainSlug)
 	}
 
 	// ── Create payment (Go SDK) ────────────────────────────────────────────────
@@ -185,7 +185,7 @@ func TestRubySignGoSubmit(t *testing.T) {
 	create, err := client.Payments.CreatePayment(context.Background(), rail0.CreatePaymentRequest{
 		Payment: rail0.PaymentInput{
 			Payer:  addressOf(buyerKey),
-			Payee:  pm.WalletAddress,
+			Payee:  pm.Address,
 			Token:  pm.TokenAddress,
 			Amount: amount,
 		},

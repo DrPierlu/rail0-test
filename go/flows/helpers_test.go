@@ -66,29 +66,29 @@ func addressOf(key *ecdsa.PrivateKey) string {
 	return strings.ToLower(crypto.PubkeyToAddress(key.PublicKey).Hex())
 }
 
-// discoverPaymentMethod returns the USDC payment method for the configured account.
-func discoverPaymentMethod(t *testing.T, client *rail0.Client) rail0.PaymentMethod {
+// discoverPaymentMethod returns the wallet token matching the configured chain and token symbol.
+func discoverPaymentMethod(t *testing.T, client *rail0.Client) rail0.WalletToken {
 	t.Helper()
 	accountID := env(t, "ACCOUNT_ID")
 	chainSlug := envOr("CHAIN_SLUG", "arc-testnet")
 	symbol    := envOr("TOKEN_SYMBOL", "USDC")
 
-	methods, err := client.Accounts.PaymentMethods(context.Background(), accountID)
+	tokens, err := client.Accounts.Wallets(context.Background(), accountID)
 	if err != nil {
-		t.Fatalf("PaymentMethods: %v", err)
+		t.Fatalf("Wallets: %v", err)
 	}
-	for _, m := range methods {
+	for _, m := range tokens {
 		if m.ChainSlug == chainSlug && m.TokenSymbol == symbol {
 			return m
 		}
 	}
-	t.Fatalf("no %s payment method on %s for account %s", symbol, chainSlug, accountID)
+	t.Fatalf("no %s wallet token on %s for account %s", symbol, chainSlug, accountID)
 	panic("unreachable")
 }
 
 // createAndSign creates a payment and submits the payer's EIP-3009 signature.
 // Returns the rail0_id.
-func createAndSign(t *testing.T, client *rail0.Client, pm rail0.PaymentMethod, mode string) string {
+func createAndSign(t *testing.T, client *rail0.Client, pm rail0.WalletToken, mode string) string {
 	t.Helper()
 	buyerKey  := loadKey(t, "BUYER_PRIVATE_KEY")
 	chainID, _ := strconv.Atoi(envOr("CHAIN_ID", "5042002"))
@@ -97,7 +97,7 @@ func createAndSign(t *testing.T, client *rail0.Client, pm rail0.PaymentMethod, m
 	create, err := client.Payments.CreatePayment(context.Background(), rail0.CreatePaymentRequest{
 		Payment: rail0.PaymentInput{
 			Payer:  strings.ToLower(addressOf(buyerKey)),
-			Payee:  pm.WalletAddress,
+			Payee:  pm.Address,
 			Token:  pm.TokenAddress,
 			Amount: amount,
 		},

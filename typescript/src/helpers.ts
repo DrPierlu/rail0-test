@@ -3,7 +3,7 @@
  */
 
 import { ethers } from 'ethers'
-import { Rail0Client, signPayment, type CreatePaymentResponse, type PaymentMethod } from '@rail0/sdk'
+import { Rail0Client, signPayment, type CreatePaymentResponse, type WalletToken } from '@rail0/sdk'
 
 export const POLL_TIMEOUT  = 120_000 // ms
 export const POLL_INTERVAL = 2_000   // ms
@@ -34,14 +34,14 @@ export function accountWallet(): ethers.Wallet {
 
 // ── Payment method discovery ─────────────────────────────────────────────────
 
-export async function discoverPaymentMethod(client: Rail0Client): Promise<PaymentMethod> {
+export async function discoverPaymentMethod(client: Rail0Client): Promise<WalletToken> {
   const accountId = getEnv('ACCOUNT_ID')
   const chainSlug = getEnv('CHAIN_SLUG', 'arc-testnet')
   const symbol    = getEnv('TOKEN_SYMBOL', 'USDC')
 
-  const methods = await client.accounts.paymentMethods(accountId)
-  const pm = methods.find((m) => m.chain_slug === chainSlug && m.token_symbol === symbol)
-  if (!pm) throw new Error(`no ${symbol} payment method on ${chainSlug}`)
+  const { data } = await client.accounts.wallets(accountId)
+  const pm = data.find((m) => m.chain_slug === chainSlug && m.token_symbol === symbol)
+  if (!pm) throw new Error(`no ${symbol} wallet token on ${chainSlug}`)
   return pm
 }
 
@@ -49,7 +49,7 @@ export async function discoverPaymentMethod(client: Rail0Client): Promise<Paymen
 
 export async function createAndSign(
   client: Rail0Client,
-  pm: PaymentMethod,
+  pm: WalletToken,
   mode: 'authorize' | 'charge',
   amount = getEnv('AMOUNT', '1000000'),
 ): Promise<{ paymentId: string; createResp: CreatePaymentResponse }> {
@@ -59,7 +59,7 @@ export async function createAndSign(
   const createResp = await client.payments.create({
     payment: {
       payer:  buyer.address.toLowerCase(),
-      payee:  pm.wallet_address,
+      payee:  pm.address,
       token:  pm.token_address,
       amount,
     },

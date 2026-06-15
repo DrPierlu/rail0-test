@@ -41,11 +41,11 @@ def payment_method(client):
     chain_slug  = get_env("CHAIN_SLUG", "arc-testnet")
     token_sym   = get_env("TOKEN_SYMBOL", "USDC")
 
-    methods = client.accounts.payment_methods(account_id)
-    for m in methods:
+    tokens = client.accounts.wallets(account_id)
+    for m in tokens:
         if m.get("chain_slug") == chain_slug and m.get("token_symbol") == token_sym:
             return m
-    raise RuntimeError(f"No {token_sym} payment method on {chain_slug}")
+    raise RuntimeError(f"No {token_sym} wallet token on {chain_slug}")
 
 
 @pytest.fixture
@@ -132,7 +132,7 @@ def create_and_sign(client, payment_method, buyer_account, chain_id: int, amount
     create_resp = client.payments.create({
         "payment": {
             "payer":  buyer_account.address.lower(),
-            "payee":  payment_method["wallet_address"],
+            "payee":  payment_method["address"],
             "token":  payment_method["token_address"],
             "amount": amount,
         },

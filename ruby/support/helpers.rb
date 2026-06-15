@@ -51,12 +51,12 @@ module IntegrationHelpers
   # ── Payment method discovery ─────────────────────────────────────────────────
 
   def discover_payment_method
-    methods = client.accounts.payment_methods(account_id)
-    pm = methods.find { |m| m[:chain_slug] == chain_slug && m[:token_symbol] == token_symbol }
+    tokens = client.accounts.wallets(account_id)
+    pm = tokens.find { |m| m[:chain_slug] == chain_slug && m[:token_symbol] == token_symbol }
     raise "No #{token_symbol} payment method found on #{chain_slug} for account #{account_id}" unless pm
     assert_equal chain_id, pm[:chain_id]
-    assert_equal account_key.address.to_s.downcase, pm[:wallet_address].downcase,
-                 "ACCOUNT_PRIVATE_KEY does not match wallet_address from API"
+    assert_equal account_key.address.to_s.downcase, pm[:address].downcase,
+                 "ACCOUNT_PRIVATE_KEY does not match wallet address from API"
     pm
   end
 
@@ -90,7 +90,7 @@ module IntegrationHelpers
     pm = discover_payment_method
 
     create_resp = client.payments.create(
-      payment:  { payer: buyer_address, payee: pm[:wallet_address],
+      payment:  { payer: buyer_address, payee: pm[:address],
                   token: pm[:token_address], amount: payment_amount },
       chain_id: chain_id,
       mode:     mode
