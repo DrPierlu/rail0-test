@@ -1,8 +1,0 @@
-source "https://rubygems.org"
-
-gem "minitest", "~> 5"
-gem "eth",      "~> 0.5"
-gem "siwe-rb",  "~> 0.2"
-
-# Local SDK — no gem publish needed
-gem "rail0", path: "../../rail0-ruby"
