@@ -5,7 +5,7 @@
 #   cp .env.example .env && $EDITOR .env
 #   ./run.sh [suite]
 #
-# Suites: api | go | all (default)
+# Suites: api | go | cli | all (default)
 #
 # The script sources .env automatically if present.
 
@@ -56,16 +56,24 @@ run_go() {
   go test ./flows/ -v -timeout 300s
 }
 
+# ── CLI (rail0-cli binary) ─────────────────────────────────────────────────────
+run_cli() {
+  cd "$ROOT/cli"
+  go test ./flows/ -v -timeout 300s
+}
+
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 case "$SUITE" in
   api) run_suite "API" run_api ;;
   go)  run_suite "Go"  run_go  ;;
+  cli) run_suite "CLI" run_cli ;;
   all)
     run_suite "API" run_api
     run_suite "Go"  run_go
+    run_suite "CLI" run_cli
     ;;
   *)
-    echo "Unknown suite: $SUITE  (api | go | all)"
+    echo "Unknown suite: $SUITE  (api | go | cli | all)"
     exit 1
     ;;
 esac

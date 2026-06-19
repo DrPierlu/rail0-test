@@ -18,10 +18,17 @@ rail0-test/
 │       ├── payments_test.rb        # GET /health, POST /payments, PUT /sign
 │       └── indexer_test.rb         # POST /sync/transactions auth + validation
 │
-└── go/                    # Go testing — rail0-go SDK
+├── go/                    # Go testing — rail0-go SDK
+│   ├── go.mod
+│   └── flows/
+│       ├── helpers_test.go
+│       ├── authorize_capture_test.go
+│       └── charge_test.go
+│
+└── cli/                   # Go testing — drives the rail0-cli binary end-to-end
     ├── go.mod
     └── flows/
-        ├── helpers_test.go
+        ├── helpers_test.go        # builds the rail0 binary; runCLI/pollStatus helpers
         ├── authorize_capture_test.go
         └── charge_test.go
 ```
@@ -42,7 +49,7 @@ The client repos are expected as siblings of `rail0-test`:
 Documents/GitHub/
 ├── rail0-gateway
 ├── rail0-go
-├── rail0-cli
+├── rail0-cli      ← built by the cli suite
 └── rail0-test      ← this repo
 ```
 
@@ -62,6 +69,7 @@ cp .env.example .env
 # Single suite
 ./run.sh api          # direct HTTP endpoint tests
 ./run.sh go           # rail0-go SDK flows
+./run.sh cli          # drives the rail0 CLI binary
 ```
 
 ## API suite
@@ -84,7 +92,7 @@ Required env vars for the api suite (in addition to the common ones):
 
 ## Flows covered
 
-| Flow | Go (`rail0-go`) |
-|---|---|
-| authorize → capture → refund | ✓ |
-| charge | ✓ |
+| Flow | Go (`rail0-go`) | CLI (`rail0-cli`) |
+|---|---|---|
+| authorize → capture → refund | ✓ | authorize → capture |
+| charge | ✓ | ✓ |
