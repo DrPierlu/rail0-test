@@ -66,23 +66,24 @@ func addressOf(key *ecdsa.PrivateKey) string {
 	return strings.ToLower(crypto.PubkeyToAddress(key.PublicKey).Hex())
 }
 
-// discoverPaymentMethod returns the wallet token matching the configured chain and token symbol.
+// discoverPaymentMethod returns the wallet token matching the configured chain
+// id and token symbol.
 func discoverPaymentMethod(t *testing.T, client *rail0.Client) rail0.WalletToken {
 	t.Helper()
-	accountID := env(t, "ACCOUNT_ID")
-	chainSlug := envOr("CHAIN_SLUG", "arc-testnet")
-	symbol    := envOr("TOKEN_SYMBOL", "USDC")
+	accountID  := env(t, "ACCOUNT_ID")
+	chainID, _ := strconv.Atoi(envOr("CHAIN_ID", "5042002"))
+	symbol     := envOr("TOKEN_SYMBOL", "USDC")
 
 	tokens, err := client.Accounts.Wallets(context.Background(), accountID)
 	if err != nil {
 		t.Fatalf("Wallets: %v", err)
 	}
 	for _, m := range tokens {
-		if m.ChainSlug == chainSlug && m.TokenSymbol == symbol {
+		if m.ChainID == chainID && m.TokenSymbol == symbol {
 			return m
 		}
 	}
-	t.Fatalf("no %s wallet token on %s for account %s", symbol, chainSlug, accountID)
+	t.Fatalf("no %s wallet token on chain %d for account %s", symbol, chainID, accountID)
 	panic("unreachable")
 }
 

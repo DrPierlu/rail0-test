@@ -1,0 +1,82 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    base64 (0.3.0)
+    bigdecimal (3.3.1)
+    bls12-381 (0.3.1)
+      bigdecimal
+      h2c (>= 0.2.1, < 0.3)
+    ecdsa (1.2.0)
+    eth (0.5.17)
+      base64 (~> 0.1)
+      bigdecimal (~> 3.1)
+      bls12-381 (~> 0.3)
+      forwardable (~> 1.3)
+      httpx (~> 1.6)
+      keccak (~> 1.3)
+      konstructor (~> 1.0)
+      openssl (~> 3.3)
+      rbsecp256k1 (~> 6.0)
+      scrypt (~> 3.0)
+    ffi (1.17.4)
+    ffi (1.17.4-arm64-darwin)
+    ffi-compiler (1.4.2)
+      ffi (>= 1.15.5)
+      rake
+    forwardable (1.4.0)
+    h2c (0.2.1)
+      ecdsa (~> 1.2.0)
+    http-2 (1.1.3)
+    httpx (1.7.8)
+      http-2 (>= 1.1.3)
+    keccak (1.3.3)
+    konstructor (1.0.2)
+    mini_portile2 (2.8.9)
+    minitest (5.27.0)
+    openssl (3.3.3)
+    pkg-config (1.6.5)
+    rake (13.4.2)
+    rbsecp256k1 (6.0.0)
+      mini_portile2 (~> 2.8)
+      pkg-config (~> 1.5)
+      rubyzip (~> 2.3)
+    rubyzip (2.4.1)
+    scrypt (3.1.0)
+      ffi-compiler (>= 1.0, < 2.0)
+      rake (~> 13)
+
+PLATFORMS
+  arm64-darwin
+  ruby
+
+DEPENDENCIES
+  eth (~> 0.5)
+  minitest (~> 5)
+
+CHECKSUMS
+  base64 (0.3.0)
+  bigdecimal (3.3.1)
+  bls12-381 (0.3.1)
+  bundler (4.0.12) sha256=7f8b757d28dfb636e7b24fba2344ac6dd13b5b24f4b46d62573d483f211825ac
+  ecdsa (1.2.0)
+  eth (0.5.17)
+  ffi (1.17.4)
+  ffi (1.17.4-arm64-darwin)
+  ffi-compiler (1.4.2)
+  forwardable (1.4.0)
+  h2c (0.2.1)
+  http-2 (1.1.3)
+  httpx (1.7.8)
+  keccak (1.3.3)
+  konstructor (1.0.2)
+  mini_portile2 (2.8.9)
+  minitest (5.27.0)
+  openssl (3.3.3)
+  pkg-config (1.6.5)
+  rake (13.4.2)
+  rbsecp256k1 (6.0.0)
+  rubyzip (2.4.1)
+  scrypt (3.1.0)
+
+BUNDLED WITH
+  4.0.12

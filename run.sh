@@ -5,7 +5,7 @@
 #   cp .env.example .env && $EDITOR .env
 #   ./run.sh [suite]
 #
-# Suites: api | ruby | go | python | rust | typescript | cross | all (default)
+# Suites: api | go | all (default)
 #
 # The script sources .env automatically if present.
 
@@ -50,72 +50,22 @@ run_api() {
   '
 }
 
-# ── Ruby ──────────────────────────────────────────────────────────────────────
-run_ruby() {
-  cd "$ROOT/ruby"
-  bundle check > /dev/null 2>&1 || bundle install --quiet
-  bundle exec ruby -Iflows -e '
-    Dir["flows/*_test.rb"].each { |f| require_relative f }
-  '
-}
-
-# ── Go ────────────────────────────────────────────────────────────────────────
+# ── Go (rail0-go SDK) ──────────────────────────────────────────────────────────
 run_go() {
   cd "$ROOT/go"
   go test ./flows/ -v -timeout 300s
 }
 
-# ── Python ────────────────────────────────────────────────────────────────────
-run_python() {
-  cd "$ROOT/python"
-  if [[ ! -d .venv ]]; then
-    python3 -m venv .venv
-    .venv/bin/pip install -q -r requirements.txt
-  fi
-  .venv/bin/pytest flows/ -v
-}
-
-# ── Rust ──────────────────────────────────────────────────────────────────────
-run_rust() {
-  cd "$ROOT/rust"
-  cargo test -- --nocapture 2>&1
-}
-
-# ── TypeScript ────────────────────────────────────────────────────────────────
-run_typescript() {
-  cd "$ROOT/typescript"
-  if [[ ! -d node_modules ]]; then
-    npm install --silent
-  fi
-  npm test
-}
-
-# ── Cross-SDK ─────────────────────────────────────────────────────────────────
-run_cross() {
-  cd "$ROOT/cross_sdk"
-  go test . -v -timeout 300s
-}
-
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 case "$SUITE" in
-  api)        run_suite "API"         run_api        ;;
-  ruby)       run_suite "Ruby"        run_ruby       ;;
-  go)         run_suite "Go"          run_go         ;;
-  python)     run_suite "Python"      run_python     ;;
-  rust)       run_suite "Rust"        run_rust       ;;
-  typescript) run_suite "TypeScript"  run_typescript ;;
-  cross)      run_suite "Cross-SDK"   run_cross      ;;
+  api) run_suite "API" run_api ;;
+  go)  run_suite "Go"  run_go  ;;
   all)
-    run_suite "API"        run_api
-    run_suite "Ruby"       run_ruby
-    run_suite "Go"         run_go
-    run_suite "Python"     run_python
-    run_suite "Rust"       run_rust
-    run_suite "TypeScript" run_typescript
-    run_suite "Cross-SDK"  run_cross
+    run_suite "API" run_api
+    run_suite "Go"  run_go
     ;;
   *)
-    echo "Unknown suite: $SUITE  (api | ruby | go | python | rust | typescript | cross | all)"
+    echo "Unknown suite: $SUITE  (api | go | all)"
     exit 1
     ;;
 esac
