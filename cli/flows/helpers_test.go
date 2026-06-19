@@ -14,9 +14,9 @@ import (
 // gateway. The CLI signs locally with --private-key, so these tests only pass
 // addresses/keys as flags — no SDK or signing code here.
 //
-// Required env (see .env.example): RAIL0_API_URL (or --base-url default),
-// BUYER_PRIVATE_KEY, PAYER_ADDRESS, PAYEE_ADDRESS, PAYEE_PRIVATE_KEY,
-// TOKEN_SYMBOL, CHAIN_ID, AMOUNT.
+// Required env (see .env.example): RAIL0_API_URL, BUYER_PRIVATE_KEY,
+// BUYER_ADDRESS (payer), ACCOUNT_PRIVATE_KEY (payee), PAYEE_ADDRESS (payee
+// wallet), TOKEN_SYMBOL, CHAIN_ID, AMOUNT (human decimal, e.g. "1.00").
 
 const (
 	pollTimeout  = 120 * time.Second
@@ -111,10 +111,10 @@ func createSigned(t *testing.T, mode string) string {
 	t.Helper()
 	out := runCLI(t, "payments", "create",
 		"-p", env(t, "BUYER_PRIVATE_KEY"),
-		"-F", env(t, "PAYER_ADDRESS"),
+		"-F", env(t, "BUYER_ADDRESS"),
 		"-T", env(t, "PAYEE_ADDRESS"),
 		"-t", envOr("TOKEN_SYMBOL", "USDC"),
-		"-a", envOr("AMOUNT", "1000000"),
+		"-a", envOr("AMOUNT", "1.00"),
 		"-c", envOr("CHAIN_ID", "5042002"),
 		"-m", mode,
 	)

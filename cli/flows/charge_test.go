@@ -4,7 +4,7 @@ import "testing"
 
 // charge (immediate pay-through, no escrow), driven through the rail0 CLI.
 func TestCharge(t *testing.T) {
-	payeeKey := env(t, "PAYEE_PRIVATE_KEY")
+	payeeKey := env(t, "ACCOUNT_PRIVATE_KEY")
 	rail0Id := createSigned(t, "charge")
 	t.Logf("created+signed charge payment %s", rail0Id)
 
