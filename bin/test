@@ -7,7 +7,8 @@
 #   bin/test all        # run every CLI flow
 #
 # Drives `go test ./flows/` in cli/, loading .env automatically. Requires a
-# running gateway + indexer (see README); start them yourself before running.
+# running gateway + indexer (see README); it prints their status first and
+# aborts with an error if either is down.
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -71,7 +72,8 @@ print(", ".join(f"chain {x[\"chain_id\"]}: block {x[\"latest_processed_block\"]}
   fi
 
   if [[ -z "$health" || -z "$meta" ]]; then
-    echo -e "${YELLOW}warning: a required service looks down — start the gateway and indexer before running flows.${RESET}"
+    echo -e "${RED}error: a required service is down — start the gateway and indexer before running flows.${RESET}\n" >&2
+    exit 1
   fi
   echo
 }
