@@ -21,12 +21,9 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 	pollStatus(t, rail0Id, "authorize", "authorized")
 	ok(t, "authorized")
 
-	// Amounts are base units server-side; read the payment's stored amount.
-	p := runCLI(t, "payments", "get", rail0Id)
-	amount, _ := p["amount"].(string)
-	if amount == "" {
-		t.Fatalf("no amount on payment %s: %v", rail0Id, p)
-	}
+	// Amounts are human decimals (e.g. "1.00"); the gateway converts to the
+	// token's base units using its decimals.
+	amount := envOr("AMOUNT", "1.00")
 
 	step(t, "3. capture/prepare → sign → submit (amount %s)", amount)
 	runCLI(t, "payments", "capture", rail0Id, "-a", amount, "-p", payeeKey)

@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -252,25 +252,18 @@ func createSigned(t *testing.T, mode string) string {
 	return id
 }
 
-// quarterOf returns amount/4 as a base-units string (integer division).
-func quarterOf(t *testing.T, amount string) string {
+// quarterAmount returns a quarter of the configured human decimal AMOUNT (e.g.
+// "1.00" → "0.25"), for partial capture/refund steps. The gateway converts the
+// decimal to base units using the token's decimals.
+func quarterAmount(t *testing.T) string {
 	t.Helper()
-	n, ok := new(big.Int).SetString(amount, 10)
-	if !ok {
-		t.Fatalf("quarterOf: not an integer amount: %q", amount)
+	f, err := strconv.ParseFloat(envOr("AMOUNT", "1.00"), 64)
+	if err != nil {
+		t.Fatalf("invalid AMOUNT: %v", err)
 	}
-	return new(big.Int).Div(n, big.NewInt(4)).String()
+	return strconv.FormatFloat(f/4, 'f', -1, 64)
 }
 
-// paymentAmount reads the payment's stored amount (base units).
-func paymentAmount(t *testing.T, rail0Id string) string {
-	t.Helper()
-	amount, _ := runCLI(t, "payments", "get", rail0Id)["amount"].(string)
-	if amount == "" {
-		t.Fatalf("no amount on payment %s", rail0Id)
-	}
-	return amount
-}
 
 // waitForAuthorizationExpiry blocks until the payment's authorizationExpiry has
 // passed, so release() is callable. Set POLICY_AUTHORIZATION_TTL low (e.g. 30)

@@ -28,7 +28,7 @@ func TestPartialCaptureRefundRelease(t *testing.T) {
 	ok(t, "authorized")
 
 	// Capture half the authorization in two quarters; half stays in escrow.
-	quarter := quarterOf(t, paymentAmount(t, rail0Id))
+	quarter := quarterAmount(t)
 	step(t, "3a. capture quarter #1 (%s)", quarter)
 	runCLI(t, "payments", "capture", rail0Id, "-a", quarter, "-p", payeeKey)
 	pollStatus(t, rail0Id, "capture #1", "partially_captured")
