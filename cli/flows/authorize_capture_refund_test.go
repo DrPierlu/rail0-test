@@ -7,10 +7,11 @@ import "testing"
 // each step; the refund command runs the two-phase EIP-3009 flow internally.
 func TestAuthorizeCaptureRefund(t *testing.T) {
 	payeeKey := env(t, "ACCOUNT_PRIVATE_KEY")
-	rail0Id := createSigned(t, "authorize")
-	t.Logf("created+signed payment %s", rail0Id)
 
-	// 1. Authorize (payee).
+	step(t, "create + sign (authorize mode)")
+	rail0Id := createSigned(t, "authorize")
+
+	step(t, "authorize — payee locks the escrow")
 	runCLI(t, "payments", "authorize", rail0Id, "-p", payeeKey)
 	pollStatus(t, rail0Id, "authorized")
 
@@ -21,12 +22,15 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 		t.Fatalf("no amount on payment %s: %v", rail0Id, p)
 	}
 
-	// 2. Capture the full amount → captured.
+	step(t, "capture full amount (%s) → captured", amount)
 	runCLI(t, "payments", "capture", rail0Id, "-a", amount, "-p", payeeKey)
 	pollStatus(t, rail0Id, "captured")
 
-	// 3. Refund the full amount → refunded (two-phase: payee signs the EIP-3009
-	//    authorization, then the unsigned tx, both handled by the CLI).
+	step(t, "refund full amount (%s) → refunded", amount)
+	// Two-phase: payee signs the EIP-3009 authorization, then the unsigned tx,
+	// both handled by the CLI.
 	runCLI(t, "payments", "refund", rail0Id, "-a", amount, "-p", payeeKey)
 	pollStatus(t, rail0Id, "refunded")
+
+	step(t, "done — authorize → capture → refund complete")
 }

@@ -68,6 +68,7 @@ func setupAuth() error {
 	if account == "" {
 		return fmt.Errorf("RAIL0_ACCOUNT_ID (or ACCOUNT_ID) must be set")
 	}
+	fmt.Printf("\n=== setup ===\ngateway: %s\naccount: %s\n", base, account)
 	for _, addr := range []string{os.Getenv("BUYER_ADDRESS"), os.Getenv("PAYEE_ADDRESS")} {
 		if addr == "" {
 			continue
@@ -77,11 +78,13 @@ func setupAuth() error {
 		}
 	}
 
+	fmt.Printf("login: payee %s\n", os.Getenv("PAYEE_ADDRESS"))
 	out, err := exec.Command(cliBin, "--json", "--base-url", base,
 		"auth", "login", "-p", os.Getenv("ACCOUNT_PRIVATE_KEY")).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("login: %s: %w", out, err)
 	}
+	fmt.Printf("setup ok — logged in\n=============\n")
 	return nil
 }
 
@@ -100,7 +103,12 @@ func ensureWallet(base, account, addr string) error {
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+	switch resp.StatusCode {
+	case http.StatusCreated:
+		fmt.Printf("wallet: registered %s\n", addr)
+	case http.StatusConflict:
+		fmt.Printf("wallet: %s already registered\n", addr)
+	default:
 		b, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("register wallet %s: HTTP %d: %s", addr, resp.StatusCode, b)
 	}
@@ -143,27 +151,71 @@ func runCLI(t *testing.T, args ...string) map[string]any {
 	return obj
 }
 
+// step prints a clearly delimited progress marker so a terminal run reads as a
+// sequence of named lifecycle phases.
+func step(t *testing.T, format string, args ...any) {
+	t.Helper()
+	t.Logf("\n▶ "+format, args...)
+}
+
+// txSummary renders the payment's embedded transactions as "operation:status"
+// tokens (e.g. "authorize:submitted capture:confirmed"), so a poll line shows
+// where each on-chain step stands without dumping the whole payload.
+func txSummary(p map[string]any) string {
+	txs, _ := p["transactions"].([]any)
+	parts := make([]string, 0, len(txs))
+	for _, it := range txs {
+		m, _ := it.(map[string]any)
+		op, _ := m["operation"].(string)
+		st, _ := m["status"].(string)
+		parts = append(parts, op+":"+st)
+	}
+	return strings.Join(parts, " ")
+}
+
 // pollStatus polls `rail0 payments get <rail0Id>` until status matches one of
-// expected, failing on timeout or a "failed" status.
+// expected, failing on timeout or a "failed" status. It logs the initial state,
+// every status transition, and every change in the transactions summary, so a
+// terminal run shows the payment moving through its intermediate states (and,
+// on a stall, exactly which transaction is stuck and at what stage).
 func pollStatus(t *testing.T, rail0Id string, expected ...string) {
 	t.Helper()
 	set := make(map[string]bool, len(expected))
 	for _, s := range expected {
 		set[s] = true
 	}
+	t.Logf("   ⏳ waiting for status %v …", expected)
+
 	deadline := time.Now().Add(pollTimeout)
+	var lastStatus, lastTx string
+	first := true
 	for {
 		p := runCLI(t, "payments", "get", rail0Id)
 		status, _ := p["status"].(string)
-		t.Logf("  [poll] status=%s", status)
+		tx := txSummary(p)
+
+		if status != lastStatus {
+			if first {
+				t.Logf("   • status=%s   [%s]", status, tx)
+			} else {
+				t.Logf("   • status: %s → %s   [%s]", lastStatus, status, tx)
+			}
+			lastStatus, lastTx, first = status, tx, false
+		} else if tx != lastTx {
+			t.Logf("   • tx: %s", tx)
+			lastTx = tx
+		}
+
 		if set[status] {
+			t.Logf("   ✓ reached %q", status)
 			return
 		}
 		if status == "failed" {
-			t.Fatalf("payment %s failed", rail0Id)
+			t.Fatalf("   ✗ payment %s failed (transactions: %s)", rail0Id, tx)
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("timed out waiting for %v (last: %s)", expected, status)
+			t.Fatalf("   ✗ timed out after %s waiting for %v (last status=%q, transactions: %s)",
+				pollTimeout, expected, status, tx)
 		}
 		time.Sleep(pollInterval)
 	}
@@ -186,6 +238,8 @@ func createSigned(t *testing.T, mode string) string {
 	if id == "" {
 		t.Fatalf("create: no rail0_id in response: %v", out)
 	}
+	t.Logf("   created+signed %s payment %s (amount %s %s)",
+		mode, id, envOr("AMOUNT", "1.00"), envOr("TOKEN_SYMBOL", "USDC"))
 	return id
 }
 
