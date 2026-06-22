@@ -40,7 +40,41 @@ TESTS=(
   "."
 )
 
-GREEN='\033[0;32m'; YELLOW='\033[0;33m'; BOLD='\033[1m'; RESET='\033[0m'
+GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; BOLD='\033[1m'; RESET='\033[0m'
+
+# Check and print the status of the gateway and indexer the flows depend on.
+check_services() {
+  echo -e "${BOLD}service status${RESET}"
+
+  local gw="${RAIL0_API_URL:-http://localhost:9292}"
+  local health; health=$(curl -s -m3 "$gw/health" 2>/dev/null || true)
+  if [[ -n "$health" ]]; then
+    local detail; detail=$(printf '%s' "$health" | python3 -c \
+      'import sys,json;d=json.load(sys.stdin);print(f"contract v{d.get(\"contract_version\")}, chains={d.get(\"active_chains\")}, db={d.get(\"db\")}")' 2>/dev/null || true)
+    echo -e "  gateway  ${GREEN}● up${RESET}    $gw  ${detail:+($detail)}"
+  else
+    echo -e "  gateway  ${RED}● down${RESET}  $gw"
+  fi
+
+  local idx="${RAIL0_INDEXER_GRAPHQL_URL:-http://localhost:8080/v1/graphql}"
+  local meta; meta=$(curl -s -m3 -X POST "$idx" \
+    -H 'Content-Type: application/json' -H 'x-hasura-admin-secret: testing' \
+    -d '{"query":"{ chain_metadata { chain_id latest_processed_block block_height } }"}' 2>/dev/null || true)
+  if printf '%s' "$meta" | grep -q latest_processed_block; then
+    local prog; prog=$(printf '%s' "$meta" | python3 -c \
+      'import sys,json
+m=json.load(sys.stdin)["data"]["chain_metadata"]
+print(", ".join(f"chain {x[\"chain_id\"]}: block {x[\"latest_processed_block\"]}/{x[\"block_height\"]}" for x in m))' 2>/dev/null || true)
+    echo -e "  indexer  ${GREEN}● up${RESET}    $idx  ${prog:+($prog)}"
+  else
+    echo -e "  indexer  ${RED}● down${RESET}  $idx"
+  fi
+
+  if [[ -z "$health" || -z "$meta" ]]; then
+    echo -e "${YELLOW}warning: a required service looks down — start the gateway and indexer before running flows.${RESET}"
+  fi
+  echo
+}
 
 run_flow() {
   local label="$1" pattern="$2"
@@ -65,6 +99,8 @@ resolve_arg() {
   # treat as a Go test-name pattern
   echo "pattern: ${arg}|${arg}"
 }
+
+check_services
 
 if [[ $# -ge 1 ]]; then
   IFS='|' read -r label pattern <<<"$(resolve_arg "$1")"
