@@ -281,9 +281,25 @@ func waitForAuthorizationExpiry(t *testing.T, rail0Id string) {
 	if expiry == 0 {
 		t.Fatalf("no authorization_expiry on payment %s", rail0Id)
 	}
-	wait := time.Until(time.Unix(int64(expiry), 0)) + 2*time.Second
-	if wait > 0 {
-		t.Logf("  waiting %s for authorizationExpiry…", wait.Round(time.Second))
-		time.Sleep(wait)
+	// release() is callable only after authorizationExpiry; +2s clears the edge.
+	target := time.Unix(int64(expiry), 0).Add(2 * time.Second)
+	if time.Until(target) <= 0 {
+		return
 	}
+	step(t, "waiting %s for authorizationExpiry…", time.Until(target).Round(time.Second))
+
+	const tick = 10 * time.Second
+	for {
+		remaining := time.Until(target)
+		if remaining <= 0 {
+			break
+		}
+		t.Logf("    [countdown] %s until authorizationExpiry", remaining.Round(time.Second))
+		if remaining < tick {
+			time.Sleep(remaining)
+		} else {
+			time.Sleep(tick)
+		}
+	}
+	ok(t, "authorizationExpiry reached — release now callable")
 }
