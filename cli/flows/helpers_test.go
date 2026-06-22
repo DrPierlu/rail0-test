@@ -79,13 +79,32 @@ func setupAuth() error {
 	}
 
 	fmt.Printf("login: payee %s\n", os.Getenv("PAYEE_ADDRESS"))
-	out, err := exec.Command(cliBin, "--json", "--base-url", base,
-		"auth", "login", "-p", os.Getenv("ACCOUNT_PRIVATE_KEY")).CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("login: %s: %w", out, err)
+	if err := loginCLI(os.Getenv("ACCOUNT_PRIVATE_KEY")); err != nil {
+		return err
 	}
 	fmt.Printf("setup ok — logged in\n=============\n")
 	return nil
+}
+
+// loginCLI runs `rail0 auth login` with the given key, caching the JWT to the
+// CLI's token file (used by every later runCLI invocation). Switches the active
+// session — e.g. a flow can log in as the payer for dispute operations.
+func loginCLI(privateKey string) error {
+	base := envOr("RAIL0_API_URL", "http://localhost:4567")
+	out, err := exec.Command(cliBin, "--json", "--base-url", base,
+		"auth", "login", "-p", privateKey).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("login: %s: %w", out, err)
+	}
+	return nil
+}
+
+// login is loginCLI for use inside a test (fails the test on error).
+func login(t *testing.T, privateKey string) {
+	t.Helper()
+	if err := loginCLI(privateKey); err != nil {
+		t.Fatalf("%v", err)
+	}
 }
 
 // ensureWallet registers a wallet on the account, treating HTTP 409 (the
