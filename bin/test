@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+# bin/test — run the rail0-cli integration flows with a selection menu.
+#
+#   bin/test            # interactive menu
+#   bin/test <n>        # run flow number <n> from the menu
+#   bin/test <pattern>  # run flows whose Go test name matches <pattern>
+#   bin/test all        # run every CLI flow
+#
+# Drives `go test ./flows/` in cli/, loading .env automatically. Requires a
+# running gateway + indexer (see README); start them yourself before running.
+
+set -euo pipefail
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+if [[ -f .env ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source .env
+  set +a
+fi
+
+# Friendly label → Go test name (index-aligned).
+LABELS=(
+  "authorize → capture (settle)"
+  "authorize → capture → refund"
+  "charge"
+  "authorize → void"
+  "partial capture ×2 → refund ×2 → release"
+  "charge → dispute → close dispute"
+  "ALL flows"
+)
+TESTS=(
+  "TestAuthorizeCapture$"
+  "TestAuthorizeCaptureRefund$"
+  "TestCharge$"
+  "TestAuthorizeVoid$"
+  "TestPartialCaptureRefundRelease$"
+  "TestDisputeOpenAndClose$"
+  "."
+)
+
+GREEN='\033[0;32m'; YELLOW='\033[0;33m'; BOLD='\033[1m'; RESET='\033[0m'
+
+run_flow() {
+  local label="$1" pattern="$2"
+  echo -e "\n${BOLD}━━━ ${label} ━━━${RESET}"
+  case "$pattern" in
+    *Release*|.) echo -e "${YELLOW}note: the release flow needs a short authorization window — start the gateway with AUTHORIZATION_TTL=30.${RESET}" ;;
+  esac
+  case "$pattern" in
+    *Release*) ;; # release wants short TTL; leave it to the operator
+    *)         echo -e "${YELLOW}note: capture/refund need a wide window — start the gateway with AUTHORIZATION_TTL=300.${RESET}" ;;
+  esac
+  ( cd cli && go test ./flows/ -run "$pattern" -v -timeout 600s )
+}
+
+# Resolve a selection passed as an argument: a menu number, "all", or a pattern.
+resolve_arg() {
+  local arg="$1"
+  if [[ "$arg" == "all" ]]; then echo "ALL flows|."; return; fi
+  if [[ "$arg" =~ ^[0-9]+$ ]] && (( arg >= 1 && arg <= ${#LABELS[@]} )); then
+    echo "${LABELS[arg-1]}|${TESTS[arg-1]}"; return
+  fi
+  # treat as a Go test-name pattern
+  echo "pattern: ${arg}|${arg}"
+}
+
+if [[ $# -ge 1 ]]; then
+  IFS='|' read -r label pattern <<<"$(resolve_arg "$1")"
+  run_flow "$label" "$pattern"
+  exit $?
+fi
+
+echo -e "${BOLD}rail0 integration flows${RESET}  (gateway + indexer must be running)"
+PS3=$'\nSelect a flow to run (number): '
+select label in "${LABELS[@]}"; do
+  if [[ -n "${label:-}" ]]; then
+    run_flow "$label" "${TESTS[REPLY-1]}"
+    break
+  fi
+  echo "invalid selection — enter a number from the list"
+done

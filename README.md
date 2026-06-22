@@ -72,6 +72,18 @@ cp .env.example .env
 ./run.sh cli          # drives the rail0 CLI binary
 ```
 
+### Picking a CLI flow with `bin/test`
+
+`bin/test` runs the rail0-cli integration flows with a selection menu (loads
+`.env` automatically; the gateway + indexer must already be running):
+
+```bash
+./bin/test                 # interactive menu — pick a flow by number
+./bin/test 1               # run flow #1 from the menu
+./bin/test TestCharge      # run flows matching a Go test name
+./bin/test all             # run every CLI flow
+```
+
 ## API suite
 
 `api/` tests the HTTP API directly without an SDK, using Ruby's standard `net/http`. They require a running rail0-gateway instance and the seeded test account. They cover:
@@ -94,6 +106,7 @@ Required env vars for the api suite (in addition to the common ones):
 
 | Flow | Go (`rail0-go`) | CLI (`rail0-cli`) |
 |---|---|---|
+| authorize → capture (settle) | — | ✓ |
 | authorize → capture → refund | ✓ | ✓ |
 | charge | ✓ | ✓ |
 | authorize → void | — | ✓ |
