@@ -152,10 +152,28 @@ func runCLI(t *testing.T, args ...string) map[string]any {
 }
 
 // step prints a clearly delimited progress marker so a terminal run reads as a
-// sequence of named lifecycle phases.
+// sequence of named lifecycle phases. desc prints a boxed header with the flow
+// title and the numbered plan of phases; step marks the start of a phase; ok
+// records its successful outcome — mirroring the old Ruby integration suite's
+// output so a terminal run reads as a clear, self-describing transcript.
+func desc(t *testing.T, title string, plan ...string) {
+	t.Helper()
+	line := strings.Repeat("─", 70)
+	t.Logf("\n%s\n  %s\n%s", line, title, line)
+	for _, p := range plan {
+		t.Logf("  %s", p)
+	}
+	t.Logf("%s", line)
+}
+
 func step(t *testing.T, format string, args ...any) {
 	t.Helper()
-	t.Logf("\n▶ "+format, args...)
+	t.Logf("  → "+format, args...)
+}
+
+func ok(t *testing.T, format string, args ...any) {
+	t.Helper()
+	t.Logf("    ✓ "+format, args...)
 }
 
 // txSummary renders the payment's embedded transactions as "operation:status"
@@ -178,44 +196,36 @@ func txSummary(p map[string]any) string {
 // every status transition, and every change in the transactions summary, so a
 // terminal run shows the payment moving through its intermediate states (and,
 // on a stall, exactly which transaction is stuck and at what stage).
-func pollStatus(t *testing.T, rail0Id string, expected ...string) {
+func pollStatus(t *testing.T, rail0Id, waitingFor string, expected ...string) map[string]any {
 	t.Helper()
 	set := make(map[string]bool, len(expected))
 	for _, s := range expected {
 		set[s] = true
 	}
-	t.Logf("   ⏳ waiting for status %v …", expected)
 
 	deadline := time.Now().Add(pollTimeout)
 	var lastStatus, lastTx string
-	first := true
 	for {
 		p := runCLI(t, "payments", "get", rail0Id)
 		status, _ := p["status"].(string)
 		tx := txSummary(p)
 
-		if status != lastStatus {
-			if first {
-				t.Logf("   • status=%s   [%s]", status, tx)
-			} else {
-				t.Logf("   • status: %s → %s   [%s]", lastStatus, status, tx)
-			}
-			lastStatus, lastTx, first = status, tx, false
-		} else if tx != lastTx {
-			t.Logf("   • tx: %s", tx)
-			lastTx = tx
+		// Log on change so the transcript shows each intermediate state without
+		// repeating an unchanged line every tick.
+		if status != lastStatus || tx != lastTx {
+			t.Logf("    [poll] %s: status=%s tx=[%s]", waitingFor, status, tx)
+			lastStatus, lastTx = status, tx
 		}
 
 		if set[status] {
-			t.Logf("   ✓ reached %q", status)
-			return
+			return p
 		}
 		if status == "failed" {
-			t.Fatalf("   ✗ payment %s failed (transactions: %s)", rail0Id, tx)
+			t.Fatalf("    ✗ payment %s failed (transactions: %s)", rail0Id, tx)
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("   ✗ timed out after %s waiting for %v (last status=%q, transactions: %s)",
-				pollTimeout, expected, status, tx)
+			t.Fatalf("    ✗ timed out after %s waiting for %s %v (last status=%q, transactions: %s)",
+				pollTimeout, waitingFor, expected, status, tx)
 		}
 		time.Sleep(pollInterval)
 	}
@@ -238,8 +248,7 @@ func createSigned(t *testing.T, mode string) string {
 	if id == "" {
 		t.Fatalf("create: no rail0_id in response: %v", out)
 	}
-	t.Logf("   created+signed %s payment %s (amount %s %s)",
-		mode, id, envOr("AMOUNT", "1.00"), envOr("TOKEN_SYMBOL", "USDC"))
+	ok(t, "payment_id=%s (%s, %s %s)", id, mode, envOr("AMOUNT", "1.00"), envOr("TOKEN_SYMBOL", "USDC"))
 	return id
 }
 

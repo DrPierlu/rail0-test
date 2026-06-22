@@ -6,17 +6,21 @@ import "testing"
 // escrow to the payer). Driven through the rail0 CLI.
 func TestAuthorizeVoid(t *testing.T) {
 	payeeKey := env(t, "ACCOUNT_PRIVATE_KEY")
+	desc(t, "authorize → void",
+		"1. Create payment + payer signature",
+		"2. Authorize — payee locks the escrow",
+		"3. Void — cancel the authorization, return escrow to payer")
 
-	step(t, "create + sign (authorize mode)")
+	step(t, "1. create + sign (authorize mode)")
 	rail0Id := createSigned(t, "authorize")
 
-	step(t, "authorize — lock the escrow")
+	step(t, "2. authorize/prepare → sign → submit")
 	runCLI(t, "payments", "authorize", rail0Id, "-p", payeeKey)
-	pollStatus(t, rail0Id, "authorized")
+	pollStatus(t, rail0Id, "authorize", "authorized")
+	ok(t, "authorized")
 
-	step(t, "void — cancel the authorization, return escrow → voided")
+	step(t, "3. void/prepare → sign → submit")
 	runCLI(t, "payments", "void", rail0Id, "-p", payeeKey)
-	pollStatus(t, rail0Id, "voided")
-
-	step(t, "done — authorize → void complete")
+	res := pollStatus(t, rail0Id, "void", "voided")
+	ok(t, "voided — status=%s", res["status"])
 }

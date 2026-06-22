@@ -7,13 +7,19 @@ import "testing"
 // each step; the refund command runs the two-phase EIP-3009 flow internally.
 func TestAuthorizeCaptureRefund(t *testing.T) {
 	payeeKey := env(t, "ACCOUNT_PRIVATE_KEY")
+	desc(t, "authorize → capture → refund (EIP-3009)",
+		"1. Create payment + payer signature",
+		"2. Authorize — payee locks the escrow",
+		"3. Capture full amount (payee)",
+		"4. Refund full amount via EIP-3009 (payee)")
 
-	step(t, "create + sign (authorize mode)")
+	step(t, "1. create + sign (authorize mode)")
 	rail0Id := createSigned(t, "authorize")
 
-	step(t, "authorize — payee locks the escrow")
+	step(t, "2. authorize/prepare → sign → submit")
 	runCLI(t, "payments", "authorize", rail0Id, "-p", payeeKey)
-	pollStatus(t, rail0Id, "authorized")
+	pollStatus(t, rail0Id, "authorize", "authorized")
+	ok(t, "authorized")
 
 	// Amounts are base units server-side; read the payment's stored amount.
 	p := runCLI(t, "payments", "get", rail0Id)
@@ -22,15 +28,13 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 		t.Fatalf("no amount on payment %s: %v", rail0Id, p)
 	}
 
-	step(t, "capture full amount (%s) → captured", amount)
+	step(t, "3. capture/prepare → sign → submit (amount %s)", amount)
 	runCLI(t, "payments", "capture", rail0Id, "-a", amount, "-p", payeeKey)
-	pollStatus(t, rail0Id, "captured")
+	res := pollStatus(t, rail0Id, "capture", "captured")
+	ok(t, "captured — status=%s", res["status"])
 
-	step(t, "refund full amount (%s) → refunded", amount)
-	// Two-phase: payee signs the EIP-3009 authorization, then the unsigned tx,
-	// both handled by the CLI.
+	step(t, "4. refund/prepare (EIP-3009 two-phase) → sign → submit (amount %s)", amount)
 	runCLI(t, "payments", "refund", rail0Id, "-a", amount, "-p", payeeKey)
-	pollStatus(t, rail0Id, "refunded")
-
-	step(t, "done — authorize → capture → refund complete")
+	res = pollStatus(t, rail0Id, "refund", "refunded")
+	ok(t, "refunded — status=%s", res["status"])
 }
