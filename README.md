@@ -94,5 +94,5 @@ Required env vars for the api suite (in addition to the common ones):
 
 | Flow | Go (`rail0-go`) | CLI (`rail0-cli`) |
 |---|---|---|
-| authorize → capture → refund | ✓ | authorize → capture |
+| authorize → capture → refund | ✓ | ✓ |
 | charge | ✓ | ✓ |
