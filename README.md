@@ -98,7 +98,15 @@ Required env vars for the api suite (in addition to the common ones):
 | charge | ✓ | ✓ |
 | authorize → void | — | ✓ |
 | partial capture ×2 → partial refund ×2 → release | — | ✓ |
+| charge → dispute → close dispute | — | ✓ |
 
-> The release flow calls `release()` only after `authorizationExpiry`, so start
-> the gateway with a short TTL (`POLICY_AUTHORIZATION_TTL=30`); otherwise the
-> test waits the full default TTL before releasing.
+> **Authorization TTL.** The gateway reads `AUTHORIZATION_TTL` (seconds). The
+> capture/refund flows must complete within that window, so it must be long
+> enough to cover on-chain + indexer confirmation latency (e.g.
+> `AUTHORIZATION_TTL=300`). The release flow only calls `release()` *after*
+> `authorizationExpiry` — run it on its own with a short TTL
+> (`AUTHORIZATION_TTL=30`) so it doesn't wait minutes for expiry.
+
+> **Disputes** are payer-driven and signal-only: the CLI/SDK only prepares the
+> transaction; the test signs it with the payer key and broadcasts it directly
+> to the chain. The payer (buyer) wallet must hold native gas on the target chain.
