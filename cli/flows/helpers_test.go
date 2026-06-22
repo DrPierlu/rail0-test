@@ -2,7 +2,10 @@ package flows_test
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -41,7 +44,67 @@ func TestMain(m *testing.M) {
 	if err := build.Run(); err != nil {
 		panic("build rail0-cli: " + err.Error())
 	}
+
+	// Payee operations (authorize/capture/…) require an authenticated session,
+	// and the CLI addresses payments by rail0_id which it resolves through the
+	// authenticated GET /payments?rail0_id= filter — so log in once up front.
+	if err := setupAuth(); err != nil {
+		panic("setup auth: " + err.Error())
+	}
 	os.Exit(m.Run())
+}
+
+// setupAuth makes the test account usable: it registers the payer and payee
+// wallets (idempotent — a 409 means the wallet already exists) and logs in as
+// the payee. `auth login` caches the JWT to the CLI's token file, which every
+// later runCLI invocation picks up automatically. The account itself
+// (RAIL0_ACCOUNT_ID) must already exist on the gateway.
+func setupAuth() error {
+	base := envOr("RAIL0_API_URL", "http://localhost:4567")
+	account := os.Getenv("RAIL0_ACCOUNT_ID")
+	if account == "" {
+		account = os.Getenv("ACCOUNT_ID")
+	}
+	if account == "" {
+		return fmt.Errorf("RAIL0_ACCOUNT_ID (or ACCOUNT_ID) must be set")
+	}
+	for _, addr := range []string{os.Getenv("BUYER_ADDRESS"), os.Getenv("PAYEE_ADDRESS")} {
+		if addr == "" {
+			continue
+		}
+		if err := ensureWallet(base, account, addr); err != nil {
+			return err
+		}
+	}
+
+	out, err := exec.Command(cliBin, "--json", "--base-url", base,
+		"auth", "login", "-p", os.Getenv("ACCOUNT_PRIVATE_KEY")).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("login: %s: %w", out, err)
+	}
+	return nil
+}
+
+// ensureWallet registers a wallet on the account, treating HTTP 409 (the
+// account_id+address unique constraint) as "already registered" so the call is
+// idempotent across reruns.
+func ensureWallet(base, account, addr string) error {
+	body := strings.NewReader(fmt.Sprintf(`{"address":%q}`, addr))
+	req, err := http.NewRequest(http.MethodPost, base+"/accounts/"+account+"/wallets", body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusConflict {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("register wallet %s: HTTP %d: %s", addr, resp.StatusCode, b)
+	}
+	return nil
 }
 
 func env(t *testing.T, key string) string {
