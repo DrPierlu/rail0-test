@@ -2,6 +2,7 @@ package flows_test
 
 import (
 	"encoding/json"
+	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -123,4 +124,40 @@ func createSigned(t *testing.T, mode string) string {
 		t.Fatalf("create: no rail0_id in response: %v", out)
 	}
 	return id
+}
+
+// quarterOf returns amount/4 as a base-units string (integer division).
+func quarterOf(t *testing.T, amount string) string {
+	t.Helper()
+	n, ok := new(big.Int).SetString(amount, 10)
+	if !ok {
+		t.Fatalf("quarterOf: not an integer amount: %q", amount)
+	}
+	return new(big.Int).Div(n, big.NewInt(4)).String()
+}
+
+// paymentAmount reads the payment's stored amount (base units).
+func paymentAmount(t *testing.T, rail0Id string) string {
+	t.Helper()
+	amount, _ := runCLI(t, "payments", "get", rail0Id)["amount"].(string)
+	if amount == "" {
+		t.Fatalf("no amount on payment %s", rail0Id)
+	}
+	return amount
+}
+
+// waitForAuthorizationExpiry blocks until the payment's authorizationExpiry has
+// passed, so release() is callable. Set POLICY_AUTHORIZATION_TTL low (e.g. 30)
+// on the gateway, or this waits the full TTL.
+func waitForAuthorizationExpiry(t *testing.T, rail0Id string) {
+	t.Helper()
+	expiry, _ := runCLI(t, "payments", "get", rail0Id)["authorization_expiry"].(float64)
+	if expiry == 0 {
+		t.Fatalf("no authorization_expiry on payment %s", rail0Id)
+	}
+	wait := time.Until(time.Unix(int64(expiry), 0)) + 2*time.Second
+	if wait > 0 {
+		t.Logf("  waiting %s for authorizationExpiry…", wait.Round(time.Second))
+		time.Sleep(wait)
+	}
 }

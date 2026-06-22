@@ -96,3 +96,9 @@ Required env vars for the api suite (in addition to the common ones):
 |---|---|---|
 | authorize → capture → refund | ✓ | ✓ |
 | charge | ✓ | ✓ |
+| authorize → void | — | ✓ |
+| partial capture ×2 → partial refund ×2 → release | — | ✓ |
+
+> The release flow calls `release()` only after `authorizationExpiry`, so start
+> the gateway with a short TTL (`POLICY_AUTHORIZATION_TTL=30`); otherwise the
+> test waits the full default TTL before releasing.
