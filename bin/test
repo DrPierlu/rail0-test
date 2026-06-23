@@ -43,6 +43,15 @@ TESTS=(
 
 GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; BOLD='\033[1m'; RESET='\033[0m'
 
+# Strip Go's "<file>.go:<line>:" caller prefix that `t.Log` prepends, leaving
+# just the step/state message (which already carries its own indentation). Other
+# lines — === RUN / --- PASS, panics, and "file.go:52 +0x.." stack frames (a
+# space, not a colon, after the line number) — don't match and pass through
+# unchanged, so failures stay fully debuggable.
+strip_test_locations() {
+  sed -E 's/^[[:space:]]*[A-Za-z0-9_]+\.go:[0-9]+:[[:space:]]?//'
+}
+
 # Check and print the status of the gateway and indexer the flows depend on.
 check_services() {
   echo -e "${BOLD}service status${RESET}"
@@ -88,7 +97,7 @@ run_flow() {
     *Release*) ;; # release wants short TTL; leave it to the operator
     *)         echo -e "${YELLOW}note: capture/refund need a wide window — start the gateway with AUTHORIZATION_TTL=300.${RESET}" ;;
   esac
-  ( cd cli && go test ./flows/ -run "$pattern" -v -timeout 600s )
+  ( cd cli && go test ./flows/ -run "$pattern" -v -timeout 600s ) | strip_test_locations
 }
 
 # Resolve a selection passed as an argument: a menu number, "all", or a pattern.
