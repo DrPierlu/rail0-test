@@ -178,11 +178,18 @@ func runCLI(t *testing.T, args ...string) map[string]any {
 func desc(t *testing.T, title string, plan ...string) {
 	t.Helper()
 	line := strings.Repeat("─", 70)
-	t.Logf("\n%s\n  %s\n%s", line, title, line)
+	// Emit each header line on its own single-line log: bin/test strips the
+	// per-line "<file>.go:<line>:" prefix, leaving the box flush-left. A single
+	// multi-line t.Logf would instead keep Go's continuation indentation on
+	// every line but the first.
+	t.Log("")
+	t.Log(line)
+	t.Log(title)
+	t.Log(line)
 	for _, p := range plan {
 		t.Logf("  %s", p)
 	}
-	t.Logf("%s", line)
+	t.Log(line)
 }
 
 func step(t *testing.T, format string, args ...any) {
@@ -282,7 +289,6 @@ func quarterAmount(t *testing.T) string {
 	}
 	return strconv.FormatFloat(f/4, 'f', -1, 64)
 }
-
 
 // waitForAuthorizationExpiry blocks until the payment's authorizationExpiry has
 // passed, so release() is callable. Set POLICY_AUTHORIZATION_TTL low (e.g. 30)
