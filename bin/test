@@ -1,14 +1,28 @@
 #!/usr/bin/env bash
 # bin/test — run the rail0-cli integration flows with a selection menu.
 #
-#   bin/test            # interactive menu
-#   bin/test <n>        # run flow number <n> from the menu
-#   bin/test <pattern>  # run flows whose Go test name matches <pattern>
-#   bin/test all        # run every CLI flow
+#   bin/test                       # interactive: pick environment, then a flow
+#   bin/test <n>                   # run flow number <n> (defaults env=development)
+#   bin/test <pattern>             # run flows whose Go test name matches <pattern>
+#   bin/test all                   # run every CLI flow
+#   bin/test -e staging 3          # run flow #3 against staging
+#   bin/test --env production all  # run all flows against production (asks to confirm)
+#   bin/test -e production -y all  # …confirming non-interactively
 #
-# Drives `go test ./flows/` in cli/, loading .env automatically. Requires a
-# running gateway + indexer (see README); it prints their status first and
-# aborts with an error if either is down.
+# Options:
+#   -e, --env <env>   target environment: development | test | staging | production
+#   -y, --yes         skip the production confirmation prompt (or RAIL0_CONFIRM_PRODUCTION=1)
+#   -h, --help        show this help
+#
+# The selected environment chooses which gateway + indexer the flows run against
+# (and how the indexer is health-checked: Hasura GraphQL locally, the Hono API's
+# /health on staging/production, where Hasura is disabled). Endpoints have
+# built-in defaults, each overridable from .env via RAIL0_API_URL_<ENV> /
+# RAIL0_INDEXER_URL_<ENV> (e.g. RAIL0_API_URL_STAGING). Wallet keys, ACCOUNT_ID
+# and CHAIN_ID still come from .env — set them to match the target environment.
+#
+# Drives `go test ./flows/` in cli/. Requires a running gateway + indexer; it
+# prints their status first and aborts with an error if either is down.
 
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -41,7 +55,12 @@ TESTS=(
   "."
 )
 
+# Selectable environments (index-aligned with the interactive menu).
+ENVIRONMENTS=(development test staging production)
+
 GREEN='\033[0;32m'; YELLOW='\033[0;33m'; RED='\033[0;31m'; BOLD='\033[1m'; RESET='\033[0m'
+
+usage() { sed -n '2,30p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 # Strip Go's "<file>.go:<line>:" caller prefix that `t.Log` prepends, leaving
 # just the step/state message (which already carries its own indentation). Other
@@ -52,32 +71,112 @@ strip_test_locations() {
   sed -E 's/^[[:space:]]*[A-Za-z0-9_]+\.go:[0-9]+:[[:space:]]?//'
 }
 
+# Resolve the gateway/indexer endpoints for the selected environment, setting
+# the globals GW (gateway base URL), IDX (indexer URL) and IDX_KIND (how to
+# health-check the indexer: "graphql" for the local Hasura, "http" for the Hono
+# /health on staging/production where Hasura is off). Built-in defaults are
+# overridable from .env via RAIL0_API_URL_<ENV> / RAIL0_INDEXER_URL_<ENV>
+# (uppercased env name), so the URLs stay in config, not hard-coded here.
+resolve_endpoints() {
+  local env="$1" gw_default idx_default
+  case "$env" in
+    development|test)
+      gw_default="http://localhost:9292"
+      idx_default="${RAIL0_INDEXER_GRAPHQL_URL:-http://localhost:8080/v1/graphql}"
+      IDX_KIND="graphql"
+      ;;
+    staging)
+      gw_default="https://rail0-gateway-staging.fly.dev"
+      idx_default="https://rail0-indexer-staging.fly.dev"
+      IDX_KIND="http"
+      ;;
+    production)
+      gw_default="https://rail0-api.fly.dev"
+      idx_default="https://rail0-indexer.fly.dev"
+      IDX_KIND="http"
+      ;;
+  esac
+
+  # Per-environment .env overrides, e.g. RAIL0_API_URL_STAGING. Indirect
+  # expansion (${!name}) and `tr` keep this working on bash 3.2 (macOS default).
+  local up gw_var idx_var
+  up=$(printf '%s' "$env" | tr '[:lower:]' '[:upper:]')
+  gw_var="RAIL0_API_URL_${up}"; idx_var="RAIL0_INDEXER_URL_${up}"
+  GW="${!gw_var:-$gw_default}"
+  IDX="${!idx_var:-$idx_default}"
+
+  # The Go flows read RAIL0_API_URL; make it the resolved gateway endpoint.
+  export RAIL0_API_URL="$GW"
+}
+
+# Abort unless the operator explicitly confirms a production run (mainnet, real
+# funds/keys). --yes or RAIL0_CONFIRM_PRODUCTION=1 skip the prompt; with neither
+# and no TTY to ask on, refuse rather than silently proceed.
+confirm_production() {
+  [[ "$ENVIRONMENT" == "production" ]] || return 0
+  echo -e "${RED}${BOLD}⚠  PRODUCTION — this targets the live mainnet gateway${RESET}"
+  echo -e "${RED}   $GW  with REAL funds and wallet keys.${RESET}"
+  if [[ "$ASSUME_YES" -eq 1 || "${RAIL0_CONFIRM_PRODUCTION:-}" == "1" ]]; then
+    echo -e "${YELLOW}   confirmed via --yes / RAIL0_CONFIRM_PRODUCTION.${RESET}"
+    return 0
+  fi
+  if [[ ! -t 0 ]]; then
+    echo -e "${RED}   refusing to run non-interactively without --yes (or RAIL0_CONFIRM_PRODUCTION=1).${RESET}" >&2
+    exit 1
+  fi
+  local reply
+  read -r -p "$(echo -e "${BOLD}Type 'yes' to proceed against production: ${RESET}")" reply
+  [[ "$reply" == "yes" ]] || { echo "Aborted."; exit 1; }
+}
+
+# Interactive environment picker (used when -e is omitted and stdin is a TTY).
+select_environment() {
+  echo -e "${BOLD}rail0 integration flows${RESET}  —  select an environment"
+  local PS3=$'\nSelect an environment (number): ' choice
+  select choice in "${ENVIRONMENTS[@]}"; do
+    if [[ -n "${choice:-}" ]]; then ENVIRONMENT="$choice"; break; fi
+    echo "invalid selection — enter a number from the list"
+  done
+}
+
 # Check and print the status of the gateway and indexer the flows depend on.
 check_services() {
+  echo -e "${BOLD}environment${RESET}  $ENVIRONMENT"
   echo -e "${BOLD}service status${RESET}"
 
-  local gw="${RAIL0_API_URL:-http://localhost:9292}"
-  local health; health=$(curl -s -m3 "$gw/health" 2>/dev/null || true)
+  local health; health=$(curl -s -m3 "$GW/health" 2>/dev/null || true)
   if [[ -n "$health" ]]; then
     local detail; detail=$(printf '%s' "$health" | python3 -c \
       'import sys,json;d=json.load(sys.stdin);print(f"contract v{d.get(\"contract_version\")}, chains={d.get(\"active_chains\")}, db={d.get(\"db\")}")' 2>/dev/null || true)
-    echo -e "  gateway  ${GREEN}● up${RESET}    $gw  ${detail:+($detail)}"
+    echo -e "  gateway  ${GREEN}● up${RESET}    $GW  ${detail:+($detail)}"
   else
-    echo -e "  gateway  ${RED}● down${RESET}  $gw"
+    echo -e "  gateway  ${RED}● down${RESET}  $GW"
   fi
 
-  local idx="${RAIL0_INDEXER_GRAPHQL_URL:-http://localhost:8080/v1/graphql}"
-  local meta; meta=$(curl -s -m3 -X POST "$idx" \
-    -H 'Content-Type: application/json' -H 'x-hasura-admin-secret: testing' \
-    -d '{"query":"{ chain_metadata { chain_id latest_processed_block block_height } }"}' 2>/dev/null || true)
-  if printf '%s' "$meta" | grep -q latest_processed_block; then
-    local prog; prog=$(printf '%s' "$meta" | python3 -c \
-      'import sys,json
+  # Indexer probe: Hasura GraphQL locally; the Hono API's /health on
+  # staging/production (where Envio's Hasura is disabled).
+  local meta
+  if [[ "$IDX_KIND" == "graphql" ]]; then
+    meta=$(curl -s -m3 -X POST "$IDX" \
+      -H 'Content-Type: application/json' -H 'x-hasura-admin-secret: testing' \
+      -d '{"query":"{ chain_metadata { chain_id latest_processed_block block_height } }"}' 2>/dev/null || true)
+    if printf '%s' "$meta" | grep -q latest_processed_block; then
+      local prog; prog=$(printf '%s' "$meta" | python3 -c \
+        'import sys,json
 m=json.load(sys.stdin)["data"]["chain_metadata"]
 print(", ".join(f"chain {x[\"chain_id\"]}: block {x[\"latest_processed_block\"]}/{x[\"block_height\"]}" for x in m))' 2>/dev/null || true)
-    echo -e "  indexer  ${GREEN}● up${RESET}    $idx  ${prog:+($prog)}"
+      echo -e "  indexer  ${GREEN}● up${RESET}    $IDX  ${prog:+($prog)}"
+    else
+      echo -e "  indexer  ${RED}● down${RESET}  $IDX"
+    fi
   else
-    echo -e "  indexer  ${RED}● down${RESET}  $idx"
+    meta=$(curl -s -m3 "$IDX/health" 2>/dev/null || true)
+    if printf '%s' "$meta" | grep -q '"ok"'; then
+      echo -e "  indexer  ${GREEN}● up${RESET}    $IDX/health"
+    else
+      echo -e "  indexer  ${RED}● down${RESET}  $IDX/health"
+      meta=""
+    fi
   fi
 
   if [[ -z "$health" || -z "$meta" ]]; then
@@ -90,13 +189,17 @@ print(", ".join(f"chain {x[\"chain_id\"]}: block {x[\"latest_processed_block\"]}
 run_flow() {
   local label="$1" pattern="$2"
   echo -e "\n${BOLD}━━━ ${label} ━━━${RESET}"
-  case "$pattern" in
-    *Release*|.) echo -e "${YELLOW}note: the release flow needs a short authorization window — start the gateway with AUTHORIZATION_TTL=30.${RESET}" ;;
-  esac
-  case "$pattern" in
-    *Release*) ;; # release wants short TTL; leave it to the operator
-    *)         echo -e "${YELLOW}note: capture/refund need a wide window — start the gateway with AUTHORIZATION_TTL=300.${RESET}" ;;
-  esac
+  # The AUTHORIZATION_TTL hints are about how to start a LOCAL gateway, so only
+  # show them for local environments; on staging/production the TTL is fixed.
+  if [[ "$ENVIRONMENT" == "development" || "$ENVIRONMENT" == "test" ]]; then
+    case "$pattern" in
+      *Release*|.) echo -e "${YELLOW}note: the release flow needs a short authorization window — start the gateway with AUTHORIZATION_TTL=30.${RESET}" ;;
+    esac
+    case "$pattern" in
+      *Release*) ;; # release wants short TTL; leave it to the operator
+      *)         echo -e "${YELLOW}note: capture/refund need a wide window — start the gateway with AUTHORIZATION_TTL=300.${RESET}" ;;
+    esac
+  fi
   ( cd cli && go test ./flows/ -run "$pattern" -v -timeout 600s ) | strip_test_locations
 }
 
@@ -111,15 +214,51 @@ resolve_arg() {
   echo "pattern: ${arg}|${arg}"
 }
 
+# ── Parse options (flags in any position) from the positional selector ──────────
+ENVIRONMENT=""
+ASSUME_YES=0
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -e|--env)   ENVIRONMENT="${2:-}"; shift 2 ;;
+    --env=*)    ENVIRONMENT="${1#*=}"; shift ;;
+    -y|--yes)   ASSUME_YES=1; shift ;;
+    -h|--help)  usage; exit 0 ;;
+    --)         shift; while [[ $# -gt 0 ]]; do ARGS+=("$1"); shift; done ;;
+    *)          ARGS+=("$1"); shift ;;
+  esac
+done
+set -- ${ARGS[@]+"${ARGS[@]}"}
+
+# ── Resolve the target environment ──────────────────────────────────────────────
+if [[ -z "$ENVIRONMENT" ]]; then
+  if [[ $# -ge 1 || ! -t 0 ]]; then
+    ENVIRONMENT="development"   # non-interactive default (an argument was given)
+  else
+    select_environment          # interactive: ask before anything else
+  fi
+fi
+
+# Validate the environment name.
+valid=0
+for e in "${ENVIRONMENTS[@]}"; do [[ "$ENVIRONMENT" == "$e" ]] && valid=1; done
+if [[ "$valid" -ne 1 ]]; then
+  echo -e "${RED}error: unknown environment '$ENVIRONMENT' (development | test | staging | production)${RESET}" >&2
+  exit 2
+fi
+
+resolve_endpoints "$ENVIRONMENT"
+confirm_production
 check_services
 
+# ── Run: argument selects a flow directly; otherwise show the flow menu ─────────
 if [[ $# -ge 1 ]]; then
   IFS='|' read -r label pattern <<<"$(resolve_arg "$1")"
   run_flow "$label" "$pattern"
   exit $?
 fi
 
-echo -e "${BOLD}rail0 integration flows${RESET}  (gateway + indexer must be running)"
+echo -e "${BOLD}rail0 integration flows${RESET}  ($ENVIRONMENT — gateway + indexer must be running)"
 PS3=$'\nSelect a flow to run (number): '
 select label in "${LABELS[@]}"; do
   if [[ -n "${label:-}" ]]; then
