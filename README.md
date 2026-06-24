@@ -78,11 +78,25 @@ cp .env.example .env
 `.env` automatically; the gateway + indexer must already be running):
 
 ```bash
-./bin/test                 # interactive menu — pick a flow by number
-./bin/test 1               # run flow #1 from the menu
+./bin/test                 # interactive: pick environment, then a flow
+./bin/test 1               # run flow #1 (env defaults to development)
 ./bin/test TestCharge      # run flows matching a Go test name
 ./bin/test all             # run every CLI flow
+./bin/test -e staging 3    # run flow #3 against staging
 ```
+
+**Environment selection.** Pass `-e|--env <development|test|staging|production>`
+(or pick it from the interactive menu when `-e` is omitted) to choose which
+gateway + indexer the flows target. The environment also picks how the indexer
+is health-checked — Hasura GraphQL locally, the Hono API's `/health` on
+staging/production (where Hasura is disabled). Endpoints have built-in defaults,
+each overridable from `.env` via `RAIL0_API_URL_<ENV>` / `RAIL0_INDEXER_URL_<ENV>`
+(e.g. `RAIL0_API_URL_STAGING`). Wallet keys, `ACCOUNT_ID` and `CHAIN_ID` still
+come from `.env` — set them to match the target environment.
+
+Selecting `production` targets the live **mainnet** gateway with real funds and
+keys, so it requires confirmation: type `yes` at the prompt, or pass `-y/--yes`
+(or set `RAIL0_CONFIRM_PRODUCTION=1`) for non-interactive runs.
 
 ## API suite
 
