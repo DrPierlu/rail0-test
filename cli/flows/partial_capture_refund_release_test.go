@@ -34,16 +34,22 @@ func TestPartialCaptureRefundRelease(t *testing.T) {
 	pollStatus(t, rail0Id, "capture #1", "partially_captured")
 	step(t, "3b. capture quarter #2 (%s) — half escrow remains", quarter)
 	runCLI(t, "payments", "capture", rail0Id, "-a", quarter, "-p", payeeKey)
-	pollStatus(t, rail0Id, "capture #2", "partially_captured")
+	// The 2nd capture keeps status partially_captured, so wait on the tx itself:
+	// the refund below seals its nonce to the live refundable, which must already
+	// include both captures.
+	waitForConfirmedCount(t, rail0Id, "capture", 2)
 	ok(t, "captured half (2×%s), half still in escrow", quarter)
 
 	step(t, "4a. refund quarter #1 (%s)", quarter)
 	runCLI(t, "payments", "refund", rail0Id, "-a", quarter, "-p", payeeKey)
 	pollStatus(t, rail0Id, "refund #1", "partially_refunded")
-	step(t, "4b. refund quarter #2 (%s)", quarter)
+	step(t, "4b. refund quarter #2 (%s) — clears the captured half; escrow remains", quarter)
 	runCLI(t, "payments", "refund", rail0Id, "-a", quarter, "-p", payeeKey)
-	res := pollStatus(t, rail0Id, "refund #2", "refunded", "partially_refunded")
-	ok(t, "captured half refunded — status=%s", res["status"])
+	// The captured half is now fully refunded, but the other half is still in
+	// escrow, so the payment is NOT closed: status advances to partially_refunded
+	// (never refunded while escrow remains, and never back to a capture state).
+	res := pollStatus(t, rail0Id, "refund #2", "partially_refunded")
+	ok(t, "captured half refunded, escrow still in place — status=%s", res["status"])
 
 	step(t, "5. release remaining escrow after authorizationExpiry")
 	waitForAuthorizationExpiry(t, rail0Id)
