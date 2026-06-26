@@ -257,6 +257,42 @@ func pollStatus(t *testing.T, rail0Id, waitingFor string, expected ...string) ma
 	}
 }
 
+// waitForConfirmedCount blocks until at least n transactions for `op` are
+// confirmed. Needed when an operation does not change the payment status (a
+// second partial capture stays partially_captured) yet a later operation
+// depends on it being settled on-chain: refund seals its EIP-3009 nonce to the
+// LIVE refundable balance, so every prior capture must be confirmed before the
+// refund is prepared — otherwise the nonce is stale and the refund reverts.
+func waitForConfirmedCount(t *testing.T, rail0Id, op string, n int) {
+	t.Helper()
+	deadline := time.Now().Add(pollTimeout)
+	for {
+		p := runCLI(t, "payments", "get", rail0Id)
+		confirmed := 0
+		txs, _ := p["transactions"].([]any)
+		for _, it := range txs {
+			m, _ := it.(map[string]any)
+			o, _ := m["operation"].(string)
+			s, _ := m["status"].(string)
+			if o != op {
+				continue
+			}
+			if s == "confirmed" {
+				confirmed++
+			} else if s == "failed" {
+				t.Fatalf("    ✗ %s transaction failed (transactions: %s)", op, txSummary(p))
+			}
+		}
+		if confirmed >= n {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("    ✗ timed out waiting for %d confirmed %s (transactions: %s)", n, op, txSummary(p))
+		}
+		time.Sleep(pollInterval)
+	}
+}
+
 // createSigned creates a payment and signs it with the buyer's key, returning
 // the rail0_id. mode is "authorize" or "charge".
 func createSigned(t *testing.T, mode string) string {

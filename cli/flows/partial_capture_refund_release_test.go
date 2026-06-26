@@ -34,7 +34,10 @@ func TestPartialCaptureRefundRelease(t *testing.T) {
 	pollStatus(t, rail0Id, "capture #1", "partially_captured")
 	step(t, "3b. capture quarter #2 (%s) — half escrow remains", quarter)
 	runCLI(t, "payments", "capture", rail0Id, "-a", quarter, "-p", payeeKey)
-	pollStatus(t, rail0Id, "capture #2", "partially_captured")
+	// The 2nd capture keeps status partially_captured, so wait on the tx itself:
+	// the refund below seals its nonce to the live refundable, which must already
+	// include both captures.
+	waitForConfirmedCount(t, rail0Id, "capture", 2)
 	ok(t, "captured half (2×%s), half still in escrow", quarter)
 
 	step(t, "4a. refund quarter #1 (%s)", quarter)
