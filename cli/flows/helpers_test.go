@@ -3,8 +3,6 @@ package flows_test
 import (
 	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -54,11 +52,13 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// setupAuth makes the test account usable: it registers the payer and payee
-// wallets (idempotent — a 409 means the wallet already exists) and logs in as
-// the payee. `auth login` caches the JWT to the CLI's token file, which every
-// later runCLI invocation picks up automatically. The account itself
-// (RAIL0_ACCOUNT_ID) must already exist on the gateway.
+// setupAuth makes the test account usable: it logs in as the payee, then
+// registers the payer and payee wallets (idempotent — a 409 means the wallet
+// already exists). Login must come first: wallet writes are authenticated
+// (the gateway's ensure_account! guard), so registration needs the session
+// JWT that `auth login` caches to the CLI's token file — picked up by every
+// later CLI invocation. The account itself (RAIL0_ACCOUNT_ID) must already
+// exist on the gateway, with the payee wallet linked so login resolves it.
 func setupAuth() error {
 	base := envOr("RAIL0_API_URL", "http://localhost:4567")
 	account := os.Getenv("RAIL0_ACCOUNT_ID")
@@ -69,18 +69,19 @@ func setupAuth() error {
 		return fmt.Errorf("RAIL0_ACCOUNT_ID (or ACCOUNT_ID) must be set")
 	}
 	fmt.Printf("\n=== setup ===\ngateway: %s\naccount: %s\n", base, account)
-	for _, addr := range []string{os.Getenv("BUYER_ADDRESS"), os.Getenv("PAYEE_ADDRESS")} {
-		if addr == "" {
-			continue
-		}
-		if err := ensureWallet(base, account, addr); err != nil {
-			return err
-		}
-	}
 
 	fmt.Printf("login: payee %s\n", os.Getenv("PAYEE_ADDRESS"))
 	if err := loginCLI(os.Getenv("ACCOUNT_PRIVATE_KEY")); err != nil {
 		return err
+	}
+
+	for _, addr := range []string{os.Getenv("BUYER_ADDRESS"), os.Getenv("PAYEE_ADDRESS")} {
+		if addr == "" {
+			continue
+		}
+		if err := ensureWallet(addr); err != nil {
+			return err
+		}
 	}
 	fmt.Printf("setup ok — logged in\n=============\n")
 	return nil
@@ -107,30 +108,24 @@ func login(t *testing.T, privateKey string) {
 	}
 }
 
-// ensureWallet registers a wallet on the account, treating HTTP 409 (the
-// account_id+address unique constraint) as "already registered" so the call is
-// idempotent across reruns.
-func ensureWallet(base, account, addr string) error {
-	body := strings.NewReader(fmt.Sprintf(`{"address":%q}`, addr))
-	req, err := http.NewRequest(http.MethodPost, base+"/accounts/"+account+"/wallets", body)
+// ensureWallet registers a wallet on the logged-in account via the CLI, which
+// sends the cached session JWT (wallet writes are authenticated). A 409
+// conflict (the account_id+address unique constraint) means the wallet is
+// already registered, so the call is idempotent across reruns. Must run after
+// loginCLI so the session token exists; the CLI derives the account from the
+// session, so no account id is passed.
+func ensureWallet(addr string) error {
+	base := envOr("RAIL0_API_URL", "http://localhost:4567")
+	out, err := exec.Command(cliBin, "--json", "--base-url", base,
+		"wallets", "create", "--address", addr).CombinedOutput()
 	if err != nil {
-		return err
+		if strings.Contains(string(out), "HTTP 409") {
+			fmt.Printf("wallet: %s already registered\n", addr)
+			return nil
+		}
+		return fmt.Errorf("register wallet %s: %s: %w", addr, out, err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-	switch resp.StatusCode {
-	case http.StatusCreated:
-		fmt.Printf("wallet: registered %s\n", addr)
-	case http.StatusConflict:
-		fmt.Printf("wallet: %s already registered\n", addr)
-	default:
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("register wallet %s: HTTP %d: %s", addr, resp.StatusCode, b)
-	}
+	fmt.Printf("wallet: registered %s\n", addr)
 	return nil
 }
 
@@ -252,6 +247,56 @@ func pollStatus(t *testing.T, rail0Id, waitingFor string, expected ...string) ma
 		if time.Now().After(deadline) {
 			t.Fatalf("    ✗ timed out after %s waiting for %s %v (last status=%q, transactions: %s)",
 				pollTimeout, waitingFor, expected, status, tx)
+		}
+		time.Sleep(pollInterval)
+	}
+}
+
+// pollOpConfirmed polls until at least `count` transactions for `op` have
+// reached "confirmed". Use it when the payment STATUS doesn't change between
+// successive same-op steps — e.g. the 2nd partial capture leaves the payment in
+// "partially_captured" just like the 1st, so pollStatus would return instantly
+// without waiting for the 2nd to confirm. That matters before a refund: the
+// refund's EIP-3009 nonce is sealed with the live refundableAmount, so the
+// payee must not sign until every prior capture has settled — otherwise
+// refundable changes under the signature and the token rejects it
+// ("FiatTokenV2: invalid signature").
+func pollOpConfirmed(t *testing.T, rail0Id, waitingFor, op string, count int) map[string]any {
+	t.Helper()
+	deadline := time.Now().Add(pollTimeout)
+	var lastTx string
+	for {
+		p := runCLI(t, "payments", "get", rail0Id)
+		tx := txSummary(p)
+		if tx != lastTx {
+			t.Logf("    [poll] %s: tx=[%s]", waitingFor, tx)
+			lastTx = tx
+		}
+
+		confirmed, failed := 0, 0
+		txs, _ := p["transactions"].([]any)
+		for _, it := range txs {
+			m, _ := it.(map[string]any)
+			if o, _ := m["operation"].(string); o != op {
+				continue
+			}
+			switch s, _ := m["status"].(string); s {
+			case "confirmed":
+				confirmed++
+			case "failed":
+				failed++
+			}
+		}
+
+		if confirmed >= count {
+			return p
+		}
+		if failed > 0 {
+			t.Fatalf("    ✗ %s: a %s transaction failed (transactions: %s)", waitingFor, op, tx)
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("    ✗ timed out after %s waiting for %s (%d/%d %s confirmed; transactions: %s)",
+				pollTimeout, waitingFor, confirmed, count, op, tx)
 		}
 		time.Sleep(pollInterval)
 	}

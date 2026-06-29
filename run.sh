@@ -59,7 +59,10 @@ run_go() {
 # ── CLI (rail0-cli binary) ─────────────────────────────────────────────────────
 run_cli() {
   cd "$ROOT/cli"
-  go test ./flows/ -v -timeout 300s
+  # The flows run serially and each broadcasts real on-chain transactions, then
+  # polls for confirmation (the release flow also waits out authorizationExpiry),
+  # so the whole suite needs well over the per-flow time — keep a wide ceiling.
+  go test ./flows/ -v -timeout 900s
 }
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────

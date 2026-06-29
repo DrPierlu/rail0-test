@@ -28,13 +28,17 @@ func TestPartialCaptureRefundRelease(t *testing.T) {
 	ok(t, "authorized")
 
 	// Capture half the authorization in two quarters; half stays in escrow.
+	// Wait on the confirmed-capture COUNT, not the payment status: both captures
+	// leave the payment "partially_captured", so a status poll would not wait for
+	// the 2nd to settle — and the following refund must not be signed until
+	// refundableAmount has stopped moving (it seals the refund nonce).
 	quarter := quarterAmount(t)
 	step(t, "3a. capture quarter #1 (%s)", quarter)
 	runCLI(t, "payments", "capture", rail0Id, "-a", quarter, "-p", payeeKey)
-	pollStatus(t, rail0Id, "capture #1", "partially_captured")
+	pollOpConfirmed(t, rail0Id, "capture #1", "capture", 1)
 	step(t, "3b. capture quarter #2 (%s) — half escrow remains", quarter)
 	runCLI(t, "payments", "capture", rail0Id, "-a", quarter, "-p", payeeKey)
-	pollStatus(t, rail0Id, "capture #2", "partially_captured")
+	pollOpConfirmed(t, rail0Id, "capture #2", "capture", 2)
 	ok(t, "captured half (2×%s), half still in escrow", quarter)
 
 	step(t, "4a. refund quarter #1 (%s)", quarter)
