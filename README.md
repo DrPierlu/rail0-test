@@ -114,7 +114,7 @@ Required env vars for the api suite (in addition to the common ones):
 | Variable | Description |
 |---|---|
 | `RAIL0_ACCOUNT_ID` | UUID of the seeded test account (fixed: `019e748b-da9a-7c3f-ba32-50572ffd5388`) |
-| `RAIL0_INDEXER_HMAC_SECRET` | HMAC secret used to sign `PUT /sync/chains/:chain_id/transactions/:tx_hash` requests |
+| `RAIL0_SYNC_HMAC_SECRET` | HMAC secret used to sign `PUT /sync/chains/:chain_id/transactions/:tx_hash` requests |
 
 ## Flows covered
 
