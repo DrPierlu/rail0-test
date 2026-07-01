@@ -24,25 +24,31 @@ describe "GET /accounts/:id/wallets" do
   it "each row includes the required keys" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
     row = json_response.first
-    %i[id wallet_id address default active
-       token_id token_symbol token_address token_decimals
-       chain_id chain_name chain_slug explorer_url].each do |key|
+    %i[id account_id address label active created_at updated_at tokens].each do |key|
       assert row.key?(key), "Missing key :#{key} in wallets row"
+    end
+    holding = row[:tokens].first
+    %i[token active default].each do |key|
+      assert holding.key?(key), "Missing key :#{key} in token holding"
+    end
+    %i[chain_id symbol address decimals].each do |key|
+      assert holding[:token].key?(key), "Missing key :#{key} in holding token"
     end
   end
 
-  it "id is the wallet_token id (uuid)" do
+  it "id is the wallet id (uuid)" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
     json_response.each do |row|
       assert_match(/\A[0-9a-f-]{36}\z/, row[:id].to_s, "id must be a UUID")
     end
   end
 
-  it "wallet_id is a separate uuid from id" do
+  it "account_id matches the requested account" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
-    row = json_response.first
-    refute_equal row[:id], row[:wallet_id],
-                 "wallet_token.id and wallet.id must be different UUIDs"
+    json_response.each do |row|
+      assert_equal ACCOUNT_ID, row[:account_id],
+                   "account_id must match the requested account"
+    end
   end
 
   it "address is a valid 0x-prefixed Ethereum address" do
@@ -53,27 +59,42 @@ describe "GET /accounts/:id/wallets" do
     end
   end
 
-  it "active and default are booleans" do
+  it "the wallet active flag is a boolean" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
     json_response.each do |row|
-      assert [true, false].include?(row[:active]),  ":active must be a boolean"
-      assert [true, false].include?(row[:default]), ":default must be a boolean"
+      assert [true, false].include?(row[:active]), ":active must be a boolean"
     end
   end
 
-  it "token_decimals is a positive integer" do
+  it "each token holding active and default are booleans" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
     json_response.each do |row|
-      assert row[:token_decimals].is_a?(Integer) && row[:token_decimals] > 0,
-             "token_decimals must be a positive integer"
+      row[:tokens].each do |holding|
+        assert [true, false].include?(holding[:active]),  "holding :active must be a boolean"
+        assert [true, false].include?(holding[:default]), "holding :default must be a boolean"
+      end
     end
   end
 
-  it "chain_id is a positive integer" do
+  it "token decimals is a positive integer" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
     json_response.each do |row|
-      assert row[:chain_id].is_a?(Integer) && row[:chain_id] > 0,
-             "chain_id must be a positive integer"
+      row[:tokens].each do |holding|
+        decimals = holding[:token][:decimals]
+        assert decimals.is_a?(Integer) && decimals > 0,
+               "token decimals must be a positive integer"
+      end
+    end
+  end
+
+  it "token chain_id is a positive integer" do
+    get "/accounts/#{ACCOUNT_ID}/wallets"
+    json_response.each do |row|
+      row[:tokens].each do |holding|
+        chain_id = holding[:token][:chain_id]
+        assert chain_id.is_a?(Integer) && chain_id > 0,
+               "token chain_id must be a positive integer"
+      end
     end
   end
 end
@@ -81,10 +102,11 @@ end
 # ── GET /accounts/:id/wallets/:wallet_token_id ────────────────────────────────
 
 describe "GET /accounts/:id/wallets/:wallet_token_id" do
-  it "returns 422 for a nonexistent wallet_token_id" do
+  it "returns 404 for a nonexistent wallet_token_id" do
     get "/accounts/#{ACCOUNT_ID}/wallets/#{NONEXISTENT_ID}"
-    assert_equal 422, last_response.status
-    assert_equal "wallet_not_found", json_response[:code]
+    assert_equal 404, last_response.status
+    assert_equal "not_found", json_response[:status]
+    assert_equal "wallet", json_response[:resource]
   end
 
   it "returns the wallet_token by id" do
@@ -95,10 +117,10 @@ describe "GET /accounts/:id/wallets/:wallet_token_id" do
     get "/accounts/#{ACCOUNT_ID}/wallets/#{first[:id]}"
     assert_equal 200, last_response.status
     row = json_response
-    assert_equal first[:id],        row[:id]
-    assert_equal first[:wallet_id], row[:wallet_id]
-    assert_equal first[:address],   row[:address]
-    assert_equal first[:token_id],  row[:token_id]
+    assert_equal first[:id],         row[:id]
+    assert_equal first[:account_id], row[:account_id]
+    assert_equal first[:address],    row[:address]
+    assert_equal first[:label],      row[:label]
   end
 
   it "returns 422 when the wallet_token belongs to a different account" do
@@ -107,7 +129,8 @@ describe "GET /accounts/:id/wallets/:wallet_token_id" do
     skip "No wallets for seeded account" unless first
 
     get "/accounts/#{NONEXISTENT_ID}/wallets/#{first[:id]}"
-    assert_equal 422, last_response.status
-    assert_equal "wallet_not_found", json_response[:code]
+    assert_equal 404, last_response.status
+    assert_equal "not_found", json_response[:status]
+    assert_equal "wallet", json_response[:resource]
   end
 end

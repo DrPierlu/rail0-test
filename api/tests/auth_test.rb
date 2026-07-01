@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "../test_helper"
+require "base64"
 
 # Tests for the authentication endpoints:
 #   POST /auth/nonces  — issue a single-use nonce
@@ -35,8 +36,12 @@ describe "POST /auth" do
 
   it "token is a valid JWT with correct sub claim" do
     token = obtain_jwt
-    # Decode without verification — we're just checking the payload shape
-    payload = JSON.parse(Base64.urlsafe_decode64(token.split(".")[1] + "=="), symbolize_names: true)
+    # Decode without verification — we're just checking the payload shape.
+    # JWT segments are base64url with padding stripped; re-pad to a multiple of
+    # 4 before decoding (urlsafe_decode64 is strict about padding).
+    seg = token.split(".")[1]
+    seg += "=" * ((4 - seg.length % 4) % 4)
+    payload = JSON.parse(Base64.urlsafe_decode64(seg), symbolize_names: true)
     assert_equal SEEDED_ADDRESS, payload[:sub].downcase
     assert payload[:exp].to_i > Time.now.to_i
   end
@@ -49,7 +54,7 @@ describe "POST /auth" do
     post_json "/auth", { message: message, signature: sig }  # replay
 
     assert last_response.status >= 400
-    assert_equal "nonce_used", json_response[:code]
+    assert_equal "nonce_used", json_response[:status]
   end
 
   it "rejects an unknown nonce" do
@@ -58,7 +63,7 @@ describe "POST /auth" do
     post_json "/auth", { message: message, signature: sig }
 
     assert last_response.status >= 400
-    assert_equal "invalid_nonce", json_response[:code]
+    assert_equal "invalid_nonce", json_response[:status]
   end
 
   it "rejects a wrong signature (different key)" do
@@ -68,7 +73,7 @@ describe "POST /auth" do
     post_json "/auth", { message: message, signature: sig }
 
     assert last_response.status >= 400
-    assert_equal "signer_mismatch", json_response[:code]
+    assert_equal "signer_mismatch", json_response[:status]
   end
 
   it "rejects a request without message" do
@@ -85,7 +90,7 @@ describe "POST /auth" do
     nonce = obtain_nonce
     post_json "/auth", { message: "not a siwe message", signature: "0x00" }
     assert last_response.status >= 400
-    assert_equal "invalid_siwe", json_response[:code]
+    assert_equal "invalid_siwe", json_response[:status]
   end
 
   it "rejects an address not in the wallets table" do
@@ -94,8 +99,8 @@ describe "POST /auth" do
     sig     = UNKNOWN_KEY.personal_sign(message)
     post_json "/auth", { message: message, signature: sig }
 
-    assert_equal 403, last_response.status
-    assert_equal "address_not_registered", json_response[:code]
+    assert_equal 422, last_response.status
+    assert_equal "address_not_registered", json_response[:status]
   end
 end
 

@@ -60,7 +60,7 @@ func TestMain(m *testing.M) {
 // later CLI invocation. The account itself (RAIL0_ACCOUNT_ID) must already
 // exist on the gateway, with the payee wallet linked so login resolves it.
 func setupAuth() error {
-	base := envOr("RAIL0_API_URL", "http://localhost:4567")
+	base := envOr("RAIL0_API_URL", "http://localhost:9292")
 	account := os.Getenv("RAIL0_ACCOUNT_ID")
 	if account == "" {
 		account = os.Getenv("ACCOUNT_ID")
@@ -91,7 +91,7 @@ func setupAuth() error {
 // CLI's token file (used by every later runCLI invocation). Switches the active
 // session — e.g. a flow can log in as the payer for dispute operations.
 func loginCLI(privateKey string) error {
-	base := envOr("RAIL0_API_URL", "http://localhost:4567")
+	base := envOr("RAIL0_API_URL", "http://localhost:9292")
 	out, err := exec.Command(cliBin, "--json", "--base-url", base,
 		"auth", "login", "-p", privateKey).CombinedOutput()
 	if err != nil {
@@ -115,7 +115,7 @@ func login(t *testing.T, privateKey string) {
 // loginCLI so the session token exists; the CLI derives the account from the
 // session, so no account id is passed.
 func ensureWallet(addr string) error {
-	base := envOr("RAIL0_API_URL", "http://localhost:4567")
+	base := envOr("RAIL0_API_URL", "http://localhost:9292")
 	out, err := exec.Command(cliBin, "--json", "--base-url", base,
 		"wallets", "create", "--address", addr).CombinedOutput()
 	if err != nil {
@@ -149,7 +149,7 @@ func envOr(key, def string) string {
 // fails the test on a non-zero exit. --base-url defaults to RAIL0_API_URL.
 func runCLI(t *testing.T, args ...string) map[string]any {
 	t.Helper()
-	full := append([]string{"--json", "--base-url", envOr("RAIL0_API_URL", "http://localhost:4567")}, args...)
+	full := append([]string{"--json", "--base-url", envOr("RAIL0_API_URL", "http://localhost:9292")}, args...)
 	cmd := exec.Command(cliBin, full...)
 	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
@@ -322,7 +322,7 @@ func quarterAmount(t *testing.T) string {
 }
 
 // waitForAuthorizationExpiry blocks until the payment's authorizationExpiry has
-// passed, so release() is callable. Set POLICY_AUTHORIZATION_TTL low (e.g. 30)
+// passed, so release() is callable. Set AUTHORIZATION_TTL low (e.g. 30)
 // on the gateway, or this waits the full TTL.
 func waitForAuthorizationExpiry(t *testing.T, rail0Id string) {
 	t.Helper()

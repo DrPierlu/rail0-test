@@ -7,6 +7,7 @@ require "uri"
 require "json"
 require "openssl"
 require "securerandom"
+require "eth"
 
 # ── HTTP client ────────────────────────────────────────────────────────────────
 
@@ -14,8 +15,9 @@ BASE_URL       = ENV.fetch("RAIL0_API_URL",  "http://localhost:9292")
 ACCOUNT_ID     = ENV.fetch("RAIL0_ACCOUNT_ID")           # seeded TEST_ACCOUNT_ID
 HMAC_SECRET    = ENV.fetch("RAIL0_INDEXER_HMAC_SECRET")  # HMAC secret for /sync/*
 
-# EVM key matching the wallet seeded in db/seed.rb (address 0x2D2B3d4E72370A7256633D426518a372a53557D5).
-SEEDED_KEY     = Eth::Key.new(priv: "0x700e3be6cef3c28464d6c432eda04d87b5a0122424f4c0adeeea1e81c6137475")
+# EVM key matching the wallet seeded in db/seed.rb (address 0xe3dd5ea618f74de4c95b0ff0ebf9921a06a694c4).
+# Read from ENV (rule 8: never hardcode secrets) — same key the flow suites use.
+SEEDED_KEY     = Eth::Key.new(priv: ENV.fetch("ACCOUNT_PRIVATE_KEY"))
 SEEDED_ADDRESS = SEEDED_KEY.address.to_s.downcase
 
 # A key whose address is NOT registered in wallets.
@@ -58,7 +60,7 @@ module ApiHelpers
   # Issues a fresh nonce via POST /nonces and returns the nonce string.
   def obtain_nonce
     @last_response = post_json "/auth/nonces", {}
-    json_response[:nonce]
+    json_response[:value]
   end
 
   # Builds a minimal EIP-4361 message that the API's siwe parser accepts.
