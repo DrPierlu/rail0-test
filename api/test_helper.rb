@@ -13,7 +13,7 @@ require "eth"
 
 BASE_URL       = ENV.fetch("RAIL0_API_URL",  "http://localhost:9292")
 ACCOUNT_ID     = ENV.fetch("RAIL0_ACCOUNT_ID")           # seeded TEST_ACCOUNT_ID
-HMAC_SECRET    = ENV.fetch("RAIL0_INDEXER_HMAC_SECRET")  # HMAC secret for /sync/*
+HMAC_SECRET    = ENV.fetch("RAIL0_SYNC_HMAC_SECRET")  # HMAC secret for /sync/*
 
 # EVM key matching the wallet seeded in db/seed.rb (address 0xe3dd5ea618f74de4c95b0ff0ebf9921a06a694c4).
 # Read from ENV (rule 8: never hardcode secrets) — same key the flow suites use.
