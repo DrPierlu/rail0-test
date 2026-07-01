@@ -17,10 +17,10 @@ import (
 )
 
 func TestAuthorizeCaptureRefund(t *testing.T) {
-	client     := newClient(t)
+	client := newClient(t)
 	accountKey := loadKey(t, "ACCOUNT_PRIVATE_KEY")
-	pm         := discoverPaymentMethod(t, client)
-	amount     := envOr("AMOUNT", "1000000")
+	pm := discoverPaymentMethod(t, client)
+	amount := envOr("AMOUNT", "1.00")
 
 	// ── Create + sign ──────────────────────────────────────────────────────────
 	t.Log("→ creating payment and submitting payer signature")
@@ -28,7 +28,7 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 	t.Logf("  payment_id=%s", paymentID)
 
 	// ── Authorize ──────────────────────────────────────────────────────────────
-	t.Log("→ authorize/payload")
+	t.Log("→ authorize/prepare")
 	prep, err := client.Payments.AuthorizePrepare(context.Background(), paymentID)
 	if err != nil {
 		t.Fatalf("AuthorizePrepare: %v", err)
@@ -40,13 +40,11 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 		t.Fatalf("Authorize: %v", err)
 	}
 	auth := pollUntilStatus(t, client, paymentID, "authorized")
-	t.Logf("  authorized — capturable=%s", auth.OnChain.CapturableAmount)
+	t.Logf("  authorized — capturable=%s", auth.CapturableAmount)
 
 	// ── Capture ────────────────────────────────────────────────────────────────
-	t.Log("→ capture/payload")
-	prep, err = client.Payments.CapturePrepare(context.Background(), paymentID, rail0.CapturePaymentRequest{
-		Amount: amount,
-	})
+	t.Log("→ capture/prepare")
+	prep, err = client.Payments.CapturePrepare(context.Background(), paymentID, amount)
 	if err != nil {
 		t.Fatalf("CapturePrepare: %v", err)
 	}
@@ -58,13 +56,13 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 	}
 	cap := pollUntilStatus(t, client, paymentID, "captured", "partially_captured")
 	t.Logf("  captured — status=%s", cap.Status)
-	if cap.OnChain.CapturableAmount != "0" {
-		t.Errorf("capturable_amount after full capture: got %s, want 0", cap.OnChain.CapturableAmount)
+	if cap.CapturableAmount != "0" {
+		t.Errorf("capturable_amount after full capture: got %s, want 0", cap.CapturableAmount)
 	}
 
 	// ── Refund (EIP-3009 two-phase) ────────────────────────────────────────────
-	t.Log("→ refund/payload phase 1")
-	phase1, err := client.Payments.RefundPrepare(context.Background(), paymentID, rail0.RefundPayloadRequest{
+	t.Log("→ refund/prepare phase 1")
+	phase1, err := client.Payments.RefundPrepare(context.Background(), paymentID, rail0.PrepareRequest{
 		Amount: amount,
 	})
 	if err != nil {
@@ -108,12 +106,10 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 		t.Fatalf("SignReceiveWithAuthorizationRaw for refund: %v", err)
 	}
 
-	t.Log("→ refund/payload phase 2")
-	phase2, err := client.Payments.RefundPrepare(context.Background(), paymentID, rail0.RefundPayloadRequest{
-		Amount: amount,
-		V:      refundSig.V,
-		R:      refundSig.R,
-		S:      refundSig.S,
+	t.Log("→ refund/prepare phase 2")
+	phase2, err := client.Payments.RefundPrepare(context.Background(), paymentID, rail0.PrepareRequest{
+		Amount:    amount,
+		Signature: packSignature(refundSig),
 	})
 	if err != nil {
 		t.Fatalf("RefundPrepare phase2: %v", err)
@@ -130,8 +126,8 @@ func TestAuthorizeCaptureRefund(t *testing.T) {
 		t.Fatalf("Refund: %v", err)
 	}
 	final := pollUntilStatus(t, client, paymentID, "refunded", "partially_refunded")
-	t.Logf("  refunded — status=%s refundable=%s", final.Status, final.OnChain.RefundableAmount)
-	if final.OnChain.RefundableAmount != "0" {
-		t.Errorf("refundable_amount after full refund: got %s, want 0", final.OnChain.RefundableAmount)
+	t.Logf("  refunded — status=%s refundable=%s", final.Status, final.RefundableAmount)
+	if final.RefundableAmount != "0" {
+		t.Errorf("refundable_amount after full refund: got %s, want 0", final.RefundableAmount)
 	}
 }

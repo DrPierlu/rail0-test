@@ -53,7 +53,7 @@ When a change in one repo affects the contract, the indexer, or any SDK, flag it
 
 `rail0-test` is the polyglot integration and cross-SDK test suite. It exercises the live gateway and the SDKs end-to-end. Beyond the rules above, the following conventions are specific to this repo.
 
-- **Layout:** `api/` (gateway HTTP tests), per-language flow tests (`go/`, `ruby/`, …), `cross_sdk/` (consistency across SDKs), orchestrated by `run.sh`. Add new tests to the matching directory; follow each language's existing harness.
-- **In-scope languages:** `go` and `ruby` (plus the CLI). `python/`, `typescript/`, and `rust/` correspond to out-of-scope SDKs (`rail0-py`, `rail0-ts`, `rail0-rust`) — leave them dormant; do not extend them unless those repos return to scope.
-- **The gateway is the source of truth.** Expected response shapes and fixtures must track the gateway's current public API; when the gateway changes, update the API tests and every in-scope SDK flow + the cross-SDK expectations together.
+- **Layout:** `api/` (gateway HTTP request tests, Ruby/Minitest) and the SDK flow suites `go/` (rail0-go) and `cli/` (drives the rail0-cli binary), orchestrated by `run.sh`. There is no `ruby/` flow suite and no `cross_sdk/` directory. Add new tests to the matching directory; follow each suite's existing harness.
+- **In-scope SDKs:** `rail0-go` and `rail0-cli` only. The `rail0-ruby`, `rail0-py`, `rail0-ts`, and `rail0-rust` SDKs are out of scope — do not add flow suites for them unless those repos return to scope. (The `api/` suite is Ruby, but it exercises the gateway HTTP API directly with `net/http`, not an SDK.)
+- **The gateway is the source of truth.** Expected response shapes and fixtures must track the gateway's current public API; when the gateway changes, update the `api/` tests and every in-scope SDK flow (`go/`, `cli/`) together.
 - **Determinism.** Tests must set up and tear down their own data; no reliance on leftover state. Keep secrets in env vars.

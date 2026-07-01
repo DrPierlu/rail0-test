@@ -16,7 +16,7 @@ rail0-test/
 │       ├── auth_test.rb            # POST /auth/nonces, POST /auth, GET /payments auth
 │       ├── accounts_test.rb        # payment-methods, wallets, wallet_tokens
 │       ├── payments_test.rb        # GET /health, POST /payments, PUT /sign
-│       └── indexer_test.rb         # POST /sync/transactions auth + validation
+│       └── indexer_test.rb         # PUT /sync/chains/:chain_id/transactions/:tx_hash auth + validation
 │
 ├── go/                    # Go testing — rail0-go SDK
 │   ├── go.mod
@@ -107,14 +107,14 @@ keys, so it requires confirmation: type `yes` at the prompt, or pass `-y/--yes`
 | `auth_test.rb` | `POST /auth/nonces`, `POST /auth`, `GET /payments` (auth enforcement) |
 | `accounts_test.rb` | `GET /accounts/:id/payment-methods`, `GET /accounts/:id/wallets`, `GET /accounts/:id/wallets/:id` |
 | `payments_test.rb` | `GET /health`, `GET /payments/:id`, `POST /payments`, `PUT /payments/:id/sign` |
-| `indexer_test.rb` | `POST /sync/transactions` (HMAC auth and input validation) |
+| `indexer_test.rb` | `PUT /sync/chains/:chain_id/transactions/:tx_hash` (HMAC auth and input validation) |
 
 Required env vars for the api suite (in addition to the common ones):
 
 | Variable | Description |
 |---|---|
 | `RAIL0_ACCOUNT_ID` | UUID of the seeded test account (fixed: `019e748b-da9a-7c3f-ba32-50572ffd5388`) |
-| `RAIL0_INDEXER_HMAC_SECRET` | HMAC secret used to sign `/sync/transactions` requests |
+| `RAIL0_INDEXER_HMAC_SECRET` | HMAC secret used to sign `PUT /sync/chains/:chain_id/transactions/:tx_hash` requests |
 
 ## Flows covered
 

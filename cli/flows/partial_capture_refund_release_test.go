@@ -8,7 +8,7 @@ import "testing"
 // authorizationExpiry.
 //
 // Requires a short authorization TTL on the gateway so release becomes callable
-// within the test window — set POLICY_AUTHORIZATION_TTL (e.g. 30) before
+// within the test window — set AUTHORIZATION_TTL (e.g. 30) before
 // starting it; otherwise the release step waits the full TTL.
 func TestPartialCaptureRefundRelease(t *testing.T) {
 	payeeKey := env(t, "ACCOUNT_PRIVATE_KEY")

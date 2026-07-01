@@ -18,7 +18,7 @@ describe "PUT /sync/chains/:chain_id/transactions/:tx_hash — authentication" d
     body = { operation: "confirm", event_type: "authorized", block_number: 1 }
     put_json "/sync/chains/#{INDEXER_CHAIN_ID}/transactions/#{INDEXER_TX_HASH}", body
     assert_equal 401, last_response.status
-    assert_equal "unauthorized", json_response[:code]
+    assert_equal "unauthorized", json_response[:status]
   end
 
   it "returns 401 with a tampered signature" do
@@ -50,9 +50,11 @@ describe "PUT /sync/chains/:chain_id/transactions/:tx_hash — authentication" d
 end
 
 describe "PUT /sync/chains/:chain_id/transactions/:tx_hash — validation" do
-  it "returns 422 for an unknown operation" do
+  it "returns 400 for an unknown operation" do
+    # `operation` is constrained to confirm|fail via Grape `values:`, so an
+    # unknown value is a request-validation error (400), not a domain 422.
     put_sync(INDEXER_CHAIN_ID, INDEXER_TX_HASH, operation: "bogus")
-    assert_equal 422, last_response.status
+    assert_equal 400, last_response.status
   end
 
   it "returns 422 for an unknown event_type on confirm" do
@@ -69,11 +71,16 @@ describe "PUT /sync/chains/:chain_id/transactions/:tx_hash — validation" do
     assert_equal "missing_param", json_response[:status]
   end
 
-  it "returns 404 when the transaction does not exist" do
+  it "accepts (202) a well-formed confirm even when the transaction does not exist" do
+    # The endpoint is async: once HMAC and the payload validate, the gateway
+    # enqueues the Syncer worker and returns 202 immediately. Whether the tx
+    # actually exists (and matches the chain) is resolved in the worker, not in
+    # the request — so an unknown tx_hash still yields 202 { status: "accepted" }.
     unknown_hash = "0x" + "00" * 32
     put_sync(INDEXER_CHAIN_ID, unknown_hash,
              operation: "confirm", event_type: "authorized", block_number: 1)
-    assert_equal 404, last_response.status
+    assert_equal 202, last_response.status
+    assert_equal "accepted", json_response[:status]
   end
 
   # chain_mismatch (422) is triggered only when the tx exists but the chain_id
