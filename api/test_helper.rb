@@ -60,7 +60,7 @@ module ApiHelpers
   # Issues a fresh nonce via POST /nonces and returns the nonce string.
   def obtain_nonce
     @last_response = post_json "/auth/nonces", {}
-    json_response[:value]
+    json_response[:nonce]
   end
 
   # Builds a minimal EIP-4361 message that the API's siwe parser accepts.
