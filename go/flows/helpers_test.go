@@ -163,8 +163,8 @@ func createAndSign(t *testing.T, client *rail0.Client, pm rail0.PaymentMethod, m
 	if err != nil {
 		t.Fatalf("Sign: %v", err)
 	}
-	if signResp.Status != "signature_stored" {
-		t.Fatalf("expected signature_stored, got %s", signResp.Status)
+	if signResp.Status != "signed" {
+		t.Fatalf("expected signed, got %s", signResp.Status)
 	}
 	return create.Rail0Id
 }

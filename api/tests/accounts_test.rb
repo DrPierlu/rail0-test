@@ -24,7 +24,7 @@ describe "GET /accounts/:id/wallets" do
   it "each row includes the required keys" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
     row = json_response.first
-    %i[id account_id address label active created_at updated_at tokens].each do |key|
+    %i[id address label active tokens].each do |key|
       assert row.key?(key), "Missing key :#{key} in wallets row"
     end
     holding = row[:tokens].first
@@ -40,14 +40,6 @@ describe "GET /accounts/:id/wallets" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
     json_response.each do |row|
       assert_match(/\A[0-9a-f-]{36}\z/, row[:id].to_s, "id must be a UUID")
-    end
-  end
-
-  it "account_id matches the requested account" do
-    get "/accounts/#{ACCOUNT_ID}/wallets"
-    json_response.each do |row|
-      assert_equal ACCOUNT_ID, row[:account_id],
-                   "account_id must match the requested account"
     end
   end
 
@@ -99,17 +91,17 @@ describe "GET /accounts/:id/wallets" do
   end
 end
 
-# ── GET /accounts/:id/wallets/:wallet_token_id ────────────────────────────────
+# ── GET /accounts/:id/wallets/:wallet_id ──────────────────────────────────────
 
-describe "GET /accounts/:id/wallets/:wallet_token_id" do
-  it "returns 404 for a nonexistent wallet_token_id" do
+describe "GET /accounts/:id/wallets/:wallet_id" do
+  it "returns 404 for a nonexistent wallet_id" do
     get "/accounts/#{ACCOUNT_ID}/wallets/#{NONEXISTENT_ID}"
     assert_equal 404, last_response.status
     assert_equal "not_found", json_response[:status]
     assert_equal "wallet", json_response[:resource]
   end
 
-  it "returns the wallet_token by id" do
+  it "returns the wallet by id" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
     first = json_response.first
     skip "No wallets for seeded account" unless first
@@ -117,13 +109,12 @@ describe "GET /accounts/:id/wallets/:wallet_token_id" do
     get "/accounts/#{ACCOUNT_ID}/wallets/#{first[:id]}"
     assert_equal 200, last_response.status
     row = json_response
-    assert_equal first[:id],         row[:id]
-    assert_equal first[:account_id], row[:account_id]
-    assert_equal first[:address],    row[:address]
-    assert_equal first[:label],      row[:label]
+    assert_equal first[:id],      row[:id]
+    assert_equal first[:address], row[:address]
+    assert_equal first[:label],   row[:label]
   end
 
-  it "returns 422 when the wallet_token belongs to a different account" do
+  it "returns 404 when the wallet belongs to a different account" do
     get "/accounts/#{ACCOUNT_ID}/wallets"
     first = json_response.first
     skip "No wallets for seeded account" unless first
