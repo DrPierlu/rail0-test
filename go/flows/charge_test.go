@@ -14,9 +14,9 @@ import (
 )
 
 func TestCharge(t *testing.T) {
-	client     := newClient(t)
+	client := newClient(t)
 	accountKey := loadKey(t, "ACCOUNT_PRIVATE_KEY")
-	pm         := discoverPaymentMethod(t, client)
+	pm := discoverPaymentMethod(t, client)
 
 	t.Log("→ creating payment (mode=charge) and submitting payer signature")
 	paymentID := createAndSign(t, client, pm, "charge")

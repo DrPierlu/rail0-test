@@ -14,7 +14,8 @@ rail0-test/
 │   ├── test_helper.rb
 │   └── tests/
 │       ├── auth_test.rb            # POST /auth/nonces, POST /auth, GET /payments auth
-│       ├── accounts_test.rb        # payment-methods, wallets, wallet_tokens
+│       ├── accounts_test.rb        # GET /accounts/:id/wallets(/:id) — SIWE-gated, own account only
+│       ├── payment_methods_test.rb # GET /payment_methods — public discovery (by account_id | address)
 │       ├── payments_test.rb        # GET /health, POST /payments, PUT /sign
 │       └── indexer_test.rb         # PUT /sync/chains/:chain_id/transactions/:tx_hash auth + validation
 │
@@ -105,7 +106,8 @@ keys, so it requires confirmation: type `yes` at the prompt, or pass `-y/--yes`
 | File | Endpoints tested |
 |---|---|
 | `auth_test.rb` | `POST /auth/nonces`, `POST /auth`, `GET /payments` (auth enforcement) |
-| `accounts_test.rb` | `GET /accounts/:id/payment-methods`, `GET /accounts/:id/wallets`, `GET /accounts/:id/wallets/:id` |
+| `accounts_test.rb` | `GET /accounts/:id/wallets`, `GET /accounts/:id/wallets/:id` (SIWE-gated — 401 without a JWT, 403 for another account) |
+| `payment_methods_test.rb` | `GET /payment_methods?account_id=…\|address=…` (public buyer-facing discovery) |
 | `payments_test.rb` | `GET /health`, `GET /payments/:id`, `POST /payments`, `PUT /payments/:id/sign` |
 | `indexer_test.rb` | `PUT /sync/chains/:chain_id/transactions/:tx_hash` (HMAC auth and input validation) |
 

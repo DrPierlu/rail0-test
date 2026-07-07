@@ -76,25 +76,32 @@ func addressOf(key *ecdsa.PrivateKey) string {
 	return strings.ToLower(crypto.PubkeyToAddress(key.PublicKey).Hex())
 }
 
+// paymentMethod is the (payee wallet, token) pair a flow pays against — the
+// fields a flow needs out of a discovered wallet/holding.
+type paymentMethod struct {
+	Address string      // payee wallet address to pay
+	Token   rail0.Token // token to pay with (symbol, address, chain_id, decimals)
+}
+
 // discoverPaymentMethod returns the payment method (payee address + token)
-// matching the configured chain id and token symbol. It queries the account's
-// active wallets and their active token holdings via WalletsService.PaymentMethods.
-func discoverPaymentMethod(t *testing.T, client *rail0.Client) rail0.PaymentMethod {
+// matching the configured chain id and token symbol. It uses the public
+// GET /payment_methods discovery — the buyer-facing endpoint — scoped to the
+// merchant account, then picks the wallet holding whose token matches.
+func discoverPaymentMethod(t *testing.T, client *rail0.Client) paymentMethod {
 	t.Helper()
 	accountID := env(t, "ACCOUNT_ID")
 	chainID, _ := strconv.Atoi(envOr("CHAIN_ID", "5042002"))
 	symbol := envOr("TOKEN_SYMBOL", "USDC")
 
-	methods, err := client.Wallets.PaymentMethods(context.Background(), accountID, rail0.PaymentMethodsParams{
-		ChainID:     chainID,
-		TokenSymbol: symbol,
-	})
+	wallets, err := client.PaymentMethods.List(context.Background(), rail0.PaymentMethodsQuery{AccountID: accountID})
 	if err != nil {
-		t.Fatalf("PaymentMethods: %v", err)
+		t.Fatalf("PaymentMethods.List: %v", err)
 	}
-	for _, m := range methods {
-		if m.ChainID == chainID && m.Token.Symbol == symbol {
-			return m
+	for _, w := range wallets {
+		for _, h := range w.Tokens {
+			if h.Token.Symbol == symbol && h.Token.ChainID == chainID {
+				return paymentMethod{Address: w.Address, Token: h.Token}
+			}
 		}
 	}
 	t.Fatalf("no %s payment method on chain %d for account %s", symbol, chainID, accountID)
@@ -106,7 +113,7 @@ func discoverPaymentMethod(t *testing.T, client *rail0.Client) rail0.PaymentMeth
 // (payee address + token), reads the EIP-3009 signing payload the gateway
 // returns while the payment is unsigned, signs it with the payer key, and stores
 // the signature via PUT /payments/:id/sign.
-func createAndSign(t *testing.T, client *rail0.Client, pm rail0.PaymentMethod, mode string) string {
+func createAndSign(t *testing.T, client *rail0.Client, pm paymentMethod, mode string) string {
 	t.Helper()
 	buyerKey := loadKey(t, "BUYER_PRIVATE_KEY")
 	chainID, _ := strconv.Atoi(envOr("CHAIN_ID", "5042002"))

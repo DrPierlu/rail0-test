@@ -165,6 +165,27 @@ func runCLI(t *testing.T, args ...string) map[string]any {
 	return obj
 }
 
+// runCLIList runs `rail0 <args…> --json` and parses a JSON ARRAY response — the
+// shape list endpoints return (e.g. `payment-methods`, `wallets`). Fails the
+// test on a non-zero exit or non-array output.
+func runCLIList(t *testing.T, args ...string) []any {
+	t.Helper()
+	full := append([]string{"--json", "--base-url", envOr("RAIL0_API_URL", "http://localhost:9292")}, args...)
+	cmd := exec.Command(cliBin, full...)
+	cmd.Env = os.Environ()
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("rail0 %s\n%s\nerror: %v", strings.Join(args, " "), out, err)
+	}
+	var arr []any
+	if len(out) > 0 {
+		if jerr := json.Unmarshal(out, &arr); jerr != nil {
+			t.Fatalf("rail0 %s: non-array JSON output: %s", strings.Join(args, " "), out)
+		}
+	}
+	return arr
+}
+
 // step prints a clearly delimited progress marker so a terminal run reads as a
 // sequence of named lifecycle phases. desc prints a boxed header with the flow
 // title and the numbered plan of phases; step marks the start of a phase; ok
