@@ -1,6 +1,6 @@
 # rail0-test
 
-Integration tests for the RAIL0 payment gateway — direct HTTP endpoint tests and end-to-end flows via the supported clients (`rail0-go`; `rail0-cli`).
+Integration tests for the RAIL0 payment gateway — direct HTTP endpoint tests and end-to-end flows via the supported clients (`rail0-go`; `rail0-ruby`; `rail0-cli`).
 
 ## Structure
 
@@ -26,6 +26,13 @@ rail0-test/
 │       ├── authorize_capture_test.go
 │       └── charge_test.go
 │
+├── ruby/                  # Minitest — rail0-ruby SDK
+│   ├── Gemfile            # rail0 as a sibling path gem + eth/siwe-rb
+│   └── flows/
+│       ├── test_helper.rb         # SDK client, SIWE login, discover/create/sign/poll helpers
+│       ├── authorize_capture_test.rb
+│       └── charge_test.rb
+│
 └── cli/                   # Go testing — drives the rail0-cli binary end-to-end
     ├── go.mod
     └── flows/
@@ -34,12 +41,12 @@ rail0-test/
         └── charge_test.go
 ```
 
-> Only the `rail0-go` and `rail0-cli` clients are in scope; the `ruby`, `python`,
+> In-scope clients: `rail0-go`, `rail0-ruby`, and `rail0-cli`. The `python`,
 > `rust`, `typescript` and `cross_sdk` suites were removed.
 
 ## Prerequisites
 
-- Ruby ≥ 3.2 + Bundler (for the `api` suite)
+- Ruby ≥ 3.2 + Bundler (for the `api` and `ruby` suites)
 - Go ≥ 1.22 (for the `go` suite)
 - Test wallets with USDC on the target chain (Arc Testnet by default)
 - The gateway running at `RAIL0_API_URL` with the test account registered
@@ -50,6 +57,7 @@ The client repos are expected as siblings of `rail0-test`:
 Documents/GitHub/
 ├── rail0-gateway
 ├── rail0-go
+├── rail0-ruby     ← used by the ruby suite (sibling path gem)
 ├── rail0-cli      ← built by the cli suite
 └── rail0-test      ← this repo
 ```
@@ -70,6 +78,7 @@ cp .env.example .env
 # Single suite
 ./run.sh api          # direct HTTP endpoint tests
 ./run.sh go           # rail0-go SDK flows
+./run.sh ruby         # rail0-ruby SDK flows
 ./run.sh cli          # drives the rail0 CLI binary
 ```
 
@@ -120,14 +129,14 @@ Required env vars for the api suite (in addition to the common ones):
 
 ## Flows covered
 
-| Flow | Go (`rail0-go`) | CLI (`rail0-cli`) |
-|---|---|---|
-| authorize → capture (settle) | — | ✓ |
-| authorize → capture → refund | ✓ | ✓ |
-| charge | ✓ | ✓ |
-| authorize → void | — | ✓ |
-| partial capture ×2 → partial refund ×2 → release | — | ✓ |
-| charge → dispute → close dispute | — | ✓ |
+| Flow | Go (`rail0-go`) | Ruby (`rail0-ruby`) | CLI (`rail0-cli`) |
+|---|---|---|---|
+| authorize → capture (settle) | — | — | ✓ |
+| authorize → capture → refund | ✓ | ✓ | ✓ |
+| charge | ✓ | ✓ | ✓ |
+| authorize → void | — | — | ✓ |
+| partial capture ×2 → partial refund ×2 → release | — | — | ✓ |
+| charge → dispute → close dispute | — | — | ✓ |
 
 > **Authorization TTL.** The gateway reads `AUTHORIZATION_TTL` (seconds). The
 > capture/refund flows must complete within that window, so it must be long

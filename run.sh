@@ -5,7 +5,7 @@
 #   cp .env.example .env && $EDITOR .env
 #   ./run.sh [suite]
 #
-# Suites: api | go | cli | all (default)
+# Suites: api | go | cli | ruby | all (default)
 #
 # The script sources .env automatically if present.
 
@@ -56,6 +56,17 @@ run_go() {
   go test ./flows/ -v -timeout 300s
 }
 
+# ── Ruby (rail0-ruby SDK) ───────────────────────────────────────────────────────
+run_ruby() {
+  cd "$ROOT/ruby"
+  bundle check > /dev/null 2>&1 || bundle install --quiet
+  # Each flow broadcasts real on-chain transactions and polls for confirmation,
+  # so allow a wide ceiling (Minitest has no global timeout of its own here).
+  bundle exec ruby -Iflows -e '
+    Dir["flows/*_test.rb"].sort.each { |f| require_relative f }
+  '
+}
+
 # ── CLI (rail0-cli binary) ─────────────────────────────────────────────────────
 run_cli() {
   cd "$ROOT/cli"
@@ -67,16 +78,18 @@ run_cli() {
 
 # ── Dispatch ──────────────────────────────────────────────────────────────────
 case "$SUITE" in
-  api) run_suite "API" run_api ;;
-  go)  run_suite "Go"  run_go  ;;
-  cli) run_suite "CLI" run_cli ;;
+  api)  run_suite "API"  run_api  ;;
+  go)   run_suite "Go"   run_go   ;;
+  cli)  run_suite "CLI"  run_cli  ;;
+  ruby) run_suite "Ruby" run_ruby ;;
   all)
-    run_suite "API" run_api
-    run_suite "Go"  run_go
-    run_suite "CLI" run_cli
+    run_suite "API"  run_api
+    run_suite "Go"   run_go
+    run_suite "Ruby" run_ruby
+    run_suite "CLI"  run_cli
     ;;
   *)
-    echo "Unknown suite: $SUITE  (api | go | cli | all)"
+    echo "Unknown suite: $SUITE  (api | go | cli | ruby | all)"
     exit 1
     ;;
 esac

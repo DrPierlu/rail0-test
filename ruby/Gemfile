@@ -1,0 +1,10 @@
+source "https://rubygems.org"
+
+# The Ruby SDK under test, as a sibling path dependency.
+gem "rail0", path: "../../rail0-ruby"
+
+gem "minitest", "~> 5"
+
+# Optional SDK deps needed by the flows: EIP-3009 + EIP-1559 signing and SIWE login.
+gem "eth",      "~> 0.5"
+gem "siwe-rb",  "~> 0.2"
