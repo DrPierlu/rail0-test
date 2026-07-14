@@ -66,7 +66,7 @@ Documents/GitHub/
 
 ```bash
 cp .env.example .env
-# edit .env with your test keys, API URL, account ID
+# edit .env with your test keys, gateway URL, account ID
 ```
 
 ## Running
