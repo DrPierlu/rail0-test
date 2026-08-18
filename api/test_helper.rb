@@ -34,6 +34,13 @@ module ApiHelpers
     http_request(:Post, path, body: body.to_json, headers: { "Content-Type" => "application/json" }.merge(headers))
   end
 
+  # PUTs an ALREADY-serialized body — used where the same string must be both
+  # signed and sent (put_sync).
+  def put_raw(path, body_str, headers: {})
+    http_request(:Put, path, body: body_str,
+                             headers: { "Content-Type" => "application/json" }.merge(headers))
+  end
+
   def put_json(path, body = {}, headers: {})
     http_request(:Put, path, body: body.to_json, headers: { "Content-Type" => "application/json" }.merge(headers))
   end
@@ -45,16 +52,25 @@ module ApiHelpers
   def last_response = @last_response
 
   # Signs a request body (or empty string for GET) with HMAC-SHA256.
-  def hmac_headers(body_str = "")
+  # Signs the canonical preimage: timestamp.METHOD.path.body. Method and path are
+  # bound because the callback's subject (chain_id, tx_hash) lives only in the
+  # URL — see rail0-indexer#64.
+  def hmac_headers(body_str = "", method: "GET", path: nil)
     ts  = Time.now.to_i.to_s
-    sig = OpenSSL::HMAC.hexdigest("SHA256", HMAC_SECRET, "#{ts}.#{body_str}")
+    sig = OpenSSL::HMAC.hexdigest("SHA256", HMAC_SECRET,
+                                  "#{ts}.#{method.to_s.upcase}.#{path}.#{body_str}")
     { "X-Rail0-Timestamp" => ts, "X-Rail0-Signature" => sig }
   end
 
   def put_sync(chain_id, tx_hash, body = {})
+    # ONE serialization, signed and sent: signing one string and sending another
+    # (even when to_json is deterministic) is the classic way to get an
+    # unexplainable 401 the day the two diverge.
     body_str = body.to_json
-    put_json "/sync/chains/#{chain_id}/transactions/#{tx_hash}", body,
-             headers: hmac_headers(body_str).merge("Content-Type" => "application/json")
+    path     = "/sync/chains/#{chain_id}/transactions/#{tx_hash}"
+    put_raw path, body_str,
+            headers: hmac_headers(body_str, method: "PUT", path: path)
+                       .merge("Content-Type" => "application/json")
   end
 
   # Issues a fresh nonce via POST /nonces and returns the nonce string.
