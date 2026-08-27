@@ -12,10 +12,18 @@ require "rail0/signing"
 # signing it locally, submitting it, and polling GET /payments/:id for the
 # expected status.
 #
-# Payee operations (authorize/capture/refund prepare+submit) are SIWE-gated, so
-# the flows authenticate as the payee via the SDK's auth.login and drive those
-# calls through a JWT-bearing client. Payment creation and the payer signature
-# are public.
+# EVERY /payments call is SIWE-gated, and the two sides authenticate separately.
+# Payee operations (authorize/capture/refund prepare+submit) run through a client
+# logged in with ACCOUNT_PRIVATE_KEY. Creation and the payer signature run through
+# one logged in with BUYER_PRIVATE_KEY — not because create is "payee-ish", but
+# because the gateway requires the PAYER to be the caller on create: a payment is
+# a commitment by the person whose funds it moves, so nobody else may mint one in
+# their name. Reads (GET /payments/:id) are participant-only, so the polling uses
+# the payer's session too.
+#
+# These flows used to create and sign over an UNAUTHENTICATED client, from when
+# those two calls were public. They stopped working the day /payments closed, with
+# "This endpoint needs a SIWE session" on the very first call.
 #
 # Required env (see ../../.env.example):
 #   RAIL0_API_URL         gateway base URL (default http://localhost:9292)
@@ -63,16 +71,26 @@ module FlowHelpers
   # for instance, boots it with 5042002).
   def siwe_chain_id = Integer(env_or("SIWE_CHAIN_ID", "1"))
 
-  # Unauthenticated client — for public calls (payment_methods, create, sign, get).
+  # Unauthenticated client. Only GET /payment_methods is public now — discovery is
+  # what a buyer does BEFORE it has a session, so it must stay reachable without one.
   def new_client = Rail0::Client.new(base_url: api_url)
+
+  # A client carrying a SIWE session for `private_key`.
+  def client_for(private_key)
+    auth = new_client.auth.login(private_key: private_key, domain: siwe_domain, chain_id: siwe_chain_id)
+    Rail0::Client.new(base_url: api_url, headers: { "Authorization" => "Bearer #{auth[:token]}" })
+  end
+
+  # Payer (buyer) client: creates the payment, deposits the EIP-3009 signature, and
+  # reads the payment back while polling. Memoised — one login per flow.
+  def payer_client
+    @payer_client ||= client_for(env("BUYER_PRIVATE_KEY"))
+  end
 
   # Payee client authenticated via SIWE, for the JWT-gated payee operations.
   # Memoised so we log in once per flow.
   def payee_client
-    @payee_client ||= begin
-      auth = new_client.auth.login(private_key: env("ACCOUNT_PRIVATE_KEY"), domain: siwe_domain, chain_id: siwe_chain_id)
-      Rail0::Client.new(base_url: api_url, headers: { "Authorization" => "Bearer #{auth[:token]}" })
-    end
+    @payee_client ||= client_for(env("ACCOUNT_PRIVATE_KEY"))
   end
 
   # Payer (buyer) EVM address, derived from BUYER_PRIVATE_KEY.
