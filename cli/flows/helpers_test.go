@@ -1,6 +1,7 @@
 package flows_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -75,11 +76,17 @@ func setupAuth() error {
 		return err
 	}
 
-	for _, addr := range []string{os.Getenv("BUYER_ADDRESS"), os.Getenv("PAYEE_ADDRESS")} {
-		if addr == "" {
+	// Each wallet is registered with ITS OWN key, not the session's: the gateway
+	// wants a SIWE proof of ownership of the address being added, so the payer
+	// wallet is proved with BUYER_PRIVATE_KEY even though the session is the payee.
+	for _, w := range []struct{ addr, key string }{
+		{os.Getenv("BUYER_ADDRESS"), os.Getenv("BUYER_PRIVATE_KEY")},
+		{os.Getenv("PAYEE_ADDRESS"), os.Getenv("ACCOUNT_PRIVATE_KEY")},
+	} {
+		if w.addr == "" {
 			continue
 		}
-		if err := ensureWallet(addr); err != nil {
+		if err := ensureWallet(w.addr, w.key); err != nil {
 			return err
 		}
 	}
@@ -110,14 +117,25 @@ func login(t *testing.T, privateKey string) {
 
 // ensureWallet registers a wallet on the logged-in account via the CLI, which
 // sends the cached session JWT (wallet writes are authenticated). A 409
-// conflict (the account_id+address unique constraint) means the wallet is
-// already registered, so the call is idempotent across reruns. Must run after
-// loginCLI so the session token exists; the CLI derives the account from the
-// session, so no account id is passed.
-func ensureWallet(addr string) error {
+// conflict (addresses are globally unique) means the wallet is already
+// registered, so the call is idempotent across reruns. Must run after loginCLI
+// so the session token exists; the CLI derives the account from the session, so
+// no account id is passed.
+//
+// `key` must be the key OF `addr`, and is not optional. `wallets create` takes a
+// SIWE proof of ownership of the address being added: it builds the same
+// EIP-4361 message as `auth login`, signed FOR THAT ADDRESS, and the CLI derives
+// the signer from the key and refuses a mismatch. Omitting -p does not fall back
+// to the session key -- it falls back to RAIL0_PRIVATE_KEY and then PROMPTS, so
+// under `go test` (no tty) setup died on "read key from stdin: EOF" before a
+// single request left the machine, against every environment alike.
+func ensureWallet(addr, key string) error {
 	base := envOr("RAIL0_API_URL", "http://localhost:9292")
+	if key == "" {
+		return fmt.Errorf("no private key for wallet %s: 'wallets create' needs the key of the address it registers", addr)
+	}
 	out, err := exec.Command(cliBin, "--json", "--base-url", base,
-		"wallets", "create", "--address", addr).CombinedOutput()
+		"wallets", "create", "--address", addr, "-p", key).CombinedOutput()
 	if err != nil {
 		if strings.Contains(string(out), "HTTP 409") {
 			fmt.Printf("wallet: %s already registered\n", addr)
@@ -145,21 +163,88 @@ func envOr(key, def string) string {
 	return def
 }
 
-// runCLI runs `rail0 <args…> --json` and returns the parsed JSON object. It
-// fails the test on a non-zero exit. --base-url defaults to RAIL0_API_URL.
-func runCLI(t *testing.T, args ...string) map[string]any {
+// redactArgs renders an argv for a failure message with every secret masked.
+// The flows pass payer and payee keys as -p/--private-key, and the diagnostics
+// below print the command that failed — so before this the FIRST failing
+// `payments create` dumped BUYER_PRIVATE_KEY in clear into the test output, and
+// from there into whatever captures it (CI logs, a redirected file). The CLI
+// already redacts the same fields in its own --debug output (rail0-cli
+// cmd/debug_redact.go); this is the test harness holding the same line.
+func redactArgs(args []string) string {
+	out := make([]string, len(args))
+	copy(out, args)
+	for i := 0; i < len(out); i++ {
+		switch out[i] {
+		case "-p", "--private-key":
+			if i+1 < len(out) {
+				out[i+1] = "<redacted>"
+				i++
+			}
+		}
+	}
+	return strings.Join(out, " ")
+}
+
+// runCLIStreams runs `rail0 --json --base-url … <args…>` and returns stdout and
+// stderr SEPARATELY.
+//
+// Separately, because only stdout is the JSON result. The CLI writes its
+// human-facing notices to stderr on purpose — "Signed in as 0x… for this command
+// only" is one, an unreadable config file is another — and these helpers used
+// CombinedOutput, which folds those lines into the bytes handed to
+// json.Unmarshal. So any command that emitted a notice failed as "non-JSON
+// output" while the CLI had in fact succeeded, and the JSON was right there in
+// the error message. stderr is kept for the failure text, where it is the useful
+// half.
+func runCLIStreams(t *testing.T, args ...string) (stdout, stderr []byte, err error) {
 	t.Helper()
 	full := append([]string{"--json", "--base-url", envOr("RAIL0_API_URL", "http://localhost:9292")}, args...)
 	cmd := exec.Command(cliBin, full...)
 	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
+	var outBuf, errBuf bytes.Buffer
+	cmd.Stdout = &outBuf
+	cmd.Stderr = &errBuf
+	err = cmd.Run()
+	return outBuf.Bytes(), errBuf.Bytes(), err
+}
+
+// confirmGated are the `payments` verbs that move money and therefore refuse to
+// run without -y/--yes outside a terminal ("refusing to run without confirmation
+// in a non-interactive shell"). `go test` is never a terminal, so every one of
+// them failed here — the flows predate the guard and none of them passed the
+// flag. Listed rather than always appended: the read-only verbs (get) have no
+// --yes flag at all and would fail on an unknown one.
+var confirmGated = map[string]bool{
+	"capture": true, "refund": true, "void": true, "release": true,
+	"charge": true, "dispute": true,
+}
+
+// withConfirmation appends -y when the invoked `payments` verb requires it.
+func withConfirmation(args []string) []string {
+	if len(args) < 2 || args[0] != "payments" || !confirmGated[args[1]] {
+		return args
+	}
+	for _, a := range args {
+		if a == "-y" || a == "--yes" {
+			return args
+		}
+	}
+	return append(append([]string{}, args...), "-y")
+}
+
+// runCLI runs `rail0 <args…> --json` and returns the parsed JSON object. It
+// fails the test on a non-zero exit. --base-url defaults to RAIL0_API_URL.
+func runCLI(t *testing.T, args ...string) map[string]any {
+	t.Helper()
+	args = withConfirmation(args)
+	out, errOut, err := runCLIStreams(t, args...)
 	if err != nil {
-		t.Fatalf("rail0 %s\n%s\nerror: %v", strings.Join(args, " "), out, err)
+		t.Fatalf("rail0 %s\n%s%s\nerror: %v", redactArgs(args), out, errOut, err)
 	}
 	var obj map[string]any
 	if len(out) > 0 {
 		if jerr := json.Unmarshal(out, &obj); jerr != nil {
-			t.Fatalf("rail0 %s: non-JSON output: %s", strings.Join(args, " "), out)
+			t.Fatalf("rail0 %s: non-JSON output: %s", redactArgs(args), out)
 		}
 	}
 	return obj
@@ -170,17 +255,14 @@ func runCLI(t *testing.T, args ...string) map[string]any {
 // test on a non-zero exit or non-array output.
 func runCLIList(t *testing.T, args ...string) []any {
 	t.Helper()
-	full := append([]string{"--json", "--base-url", envOr("RAIL0_API_URL", "http://localhost:9292")}, args...)
-	cmd := exec.Command(cliBin, full...)
-	cmd.Env = os.Environ()
-	out, err := cmd.CombinedOutput()
+	out, errOut, err := runCLIStreams(t, args...)
 	if err != nil {
-		t.Fatalf("rail0 %s\n%s\nerror: %v", strings.Join(args, " "), out, err)
+		t.Fatalf("rail0 %s\n%s%s\nerror: %v", redactArgs(args), out, errOut, err)
 	}
 	var arr []any
 	if len(out) > 0 {
 		if jerr := json.Unmarshal(out, &arr); jerr != nil {
-			t.Fatalf("rail0 %s: non-array JSON output: %s", strings.Join(args, " "), out)
+			t.Fatalf("rail0 %s: non-array JSON output: %s", redactArgs(args), out)
 		}
 	}
 	return arr
@@ -311,17 +393,32 @@ func waitForConfirmedCount(t *testing.T, rail0Id, op string, n int) {
 
 // createSigned creates a payment and signs it with the buyer's key, returning
 // the rail0_id. mode is "authorize" or "charge".
+//
+// The mode reaches the CLI as a BOOLEAN, not as a value: `payments create` takes
+// -C/--charge and defaults to authorize. It used to take `-m <mode>`, and the
+// flows still passed it — so every flow died on "unknown shorthand flag: 'm'"
+// before a payment was ever created. A bool is also why "charge" cannot simply
+// be forwarded: an unrecognised mode string must fail here rather than silently
+// become an authorize, which is a different payment.
 func createSigned(t *testing.T, mode string) string {
 	t.Helper()
-	out := runCLI(t, "payments", "create",
+	args := []string{"payments", "create",
 		"-p", env(t, "BUYER_PRIVATE_KEY"),
 		"-F", env(t, "BUYER_ADDRESS"),
 		"-T", env(t, "PAYEE_ADDRESS"),
 		"-t", envOr("TOKEN_SYMBOL", "USDC"),
 		"-a", envOr("AMOUNT", "1.00"),
 		"-c", envOr("CHAIN_ID", "5042002"),
-		"-m", mode,
-	)
+	}
+	switch mode {
+	case "charge":
+		args = append(args, "-C")
+	case "authorize":
+		// the CLI's default; no flag
+	default:
+		t.Fatalf("createSigned: unknown mode %q (want \"authorize\" or \"charge\")", mode)
+	}
+	out := runCLI(t, args...)
 	id, _ := out["rail0_id"].(string)
 	if id == "" {
 		t.Fatalf("create: no rail0_id in response: %v", out)
