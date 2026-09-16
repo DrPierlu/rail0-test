@@ -10,9 +10,11 @@ require_relative "test_helper"
 
 describe "authorize → capture → refund (rail0-ruby)" do
   it "settles a payment through the full lifecycle" do
-    client   = new_client
+    # Discovery is public; everything after it is the PAYER's session — the gateway
+    # requires payer == caller on create, and reads are participant-only.
     payee_pk = env("ACCOUNT_PRIVATE_KEY")
-    pm       = discover_payment_method(client)
+    pm       = discover_payment_method(new_client)
+    client   = payer_client
 
     # ── Create + sign (payer, public) ─────────────────────────────────────────
     puts "→ creating payment and submitting payer signature"

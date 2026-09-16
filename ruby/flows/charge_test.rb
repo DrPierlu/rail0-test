@@ -10,9 +10,11 @@ require_relative "test_helper"
 
 describe "charge (rail0-ruby)" do
   it "charges a payment in one shot" do
-    client   = new_client
+    # Discovery is public; everything after it is the PAYER's session — the gateway
+    # requires payer == caller on create, and reads are participant-only.
     payee_pk = env("ACCOUNT_PRIVATE_KEY")
-    pm       = discover_payment_method(client)
+    pm       = discover_payment_method(new_client)
+    client   = payer_client
 
     puts "→ creating payment (mode=charge) and submitting payer signature"
     payment_id = create_and_sign(client, pm, "charge")
