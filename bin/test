@@ -200,7 +200,20 @@ run_flow() {
       *)         echo -e "${YELLOW}note: capture/refund need a wide window — start the gateway with AUTHORIZATION_TTL=300.${RESET}" ;;
     esac
   fi
-  ( cd cli && go test ./flows/ -run "$pattern" -v -timeout 600s ) | strip_test_locations
+  # -count=1 disables Go's test cache, and it is not optional here.
+  #
+  # These flows assert nothing about this repo: they move USDC on a testnet and
+  # poll a live gateway and indexer until the payment settles. Their result is a
+  # statement about THAT environment at THAT moment, and the cache key is the
+  # package's inputs — none of which change when the environment does. So a second
+  # run against an environment that has since broken replays the old PASS verbatim,
+  # right down to the payment id and the elapsed time, and appends "(cached)" where
+  # nobody reads it.
+  #
+  # That is the worst failure a test suite has: green, instant, and about nothing.
+  # Observed for real while verifying a deploy — the "passing" run had created no
+  # payment at all.
+  ( cd cli && go test ./flows/ -run "$pattern" -count=1 -v -timeout 600s ) | strip_test_locations
 }
 
 # Resolve a selection passed as an argument: a menu number, "all", or a pattern.
