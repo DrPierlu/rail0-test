@@ -1,0 +1,135 @@
+# Compile-check the suites on every push and pull request.
+#
+# These are INTEGRATION tests: actually running them needs a live gateway, a funded
+# testnet wallet and an indexer — none of which belongs in CI (and .env.example
+# documents exactly that setup). So this workflow deliberately does NOT run tests.
+# What it verifies is the thing that has actually rotted here before: the suites'
+# CODE drifting out of compilability against the SDKs they exercise (the api suite
+# once sat broken against the flat POST /payments body for weeks, invisible until
+# the next manual run).
+#
+# The go and ruby suites resolve their SDKs as SIBLING checkouts (replace
+# ../../rail0-go, path: ../../rail0-ruby). Both repos are private, so their
+# checkouts need the same fine-grained PAT arrangement rail0-cli's CI uses:
+#
+#   Secret RAIL0_SIBLINGS_TOKEN — contents: read on commercelayer/rail0-go and
+#   commercelayer/rail0-ruby.
+#
+# WITHOUT that secret the job SKIPS rather than fails. A gate that is red for a
+# reason no push can fix is worse than no gate: it is indistinguishable from a
+# real break, and it teaches everyone to scroll past a red tick. So the absence of
+# the token is reported as a notice and the compile steps are skipped; the moment
+# the secret exists the gate starts working, with no further change here.
+#
+# A fork PR gets no secrets either, so it takes the same skip path — acceptable
+# while contributions come from branches in this repo.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    env:
+      SIBLINGS_TOKEN: ${{ secrets.RAIL0_SIBLINGS_TOKEN }}
+    steps:
+      # The `secrets` context is not available in a job-level `if`, so the token is
+      # mapped to env above and every step below is gated on this step's output.
+      - name: Is the sibling token configured?
+        id: guard
+        run: |
+          if [ -z "${SIBLINGS_TOKEN:-}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Compile check skipped::RAIL0_SIBLINGS_TOKEN is not set, so the private sibling repos (rail0-go, rail0-ruby) cannot be checked out. Add the secret to enable this gate."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.configured == 'true'
+        with:
+          path: rail0-test
+
+      - name: Checkout rail0-go (sibling; resolves ../../rail0-go)
+        if: steps.guard.outputs.configured == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: commercelayer/rail0-go
+          ref: main
+          path: rail0-go
+          token: ${{ secrets.RAIL0_SIBLINGS_TOKEN }}
+
+      - name: Checkout rail0-ruby (sibling; resolves ../../rail0-ruby)
+        if: steps.guard.outputs.configured == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: commercelayer/rail0-ruby
+          ref: main
+          path: rail0-ruby
+          token: ${{ secrets.RAIL0_SIBLINGS_TOKEN }}
+
+      - uses: actions/setup-go@v5
+        if: steps.guard.outputs.configured == 'true'
+        with:
+          go-version: "1.25"
+          cache-dependency-path: rail0-test/go/go.sum
+
+      # `go vet` type-checks the _test.go files too, which `go build` alone would
+      # skip — and the flows are all test files, so vet IS the compile check here.
+      - name: Compile the go flows against rail0-go main
+        if: steps.guard.outputs.configured == 'true'
+        working-directory: rail0-test/go
+        run: go vet ./...
+
+      - name: Compile the cli-driven flows
+        if: steps.guard.outputs.configured == 'true'
+        working-directory: rail0-test/cli
+        run: go vet ./...
+
+      # rbsecp256k1 (via siwe-rb → eth) needs the system libsecp256k1 — same
+      # arrangement as rail0-ruby's own CI, same env-var spelling of the build flag.
+      - name: Install libsecp256k1
+        if: steps.guard.outputs.configured == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libsecp256k1-dev pkg-config
+
+      - uses: ruby/setup-ruby@v1
+        if: steps.guard.outputs.configured == 'true'
+        env:
+          BUNDLE_BUILD__RBSECP256K1: "--with-system-libraries"
+        with:
+          ruby-version: "3.3"
+
+      # Both suites DO commit a Gemfile.lock, and neither is installed frozen —
+      # so bundler re-resolves the SDK from the sibling checkout (path gem
+      # ../../rail0-ruby) on every run, which is the whole point of the gate.
+      # api/Gemfile.lock pins only arm64-darwin + ruby, so the native gems build
+      # from source here; that is what libsecp256k1-dev above is for.
+      # ruby -c parses every test file; requiring them would need the live env
+      # vars the helper demands at load.
+      - name: Compile the api suite
+        if: steps.guard.outputs.configured == 'true'
+        working-directory: rail0-test/api
+        env:
+          BUNDLE_BUILD__RBSECP256K1: "--with-system-libraries"
+        run: |
+          bundle install
+          find . -name '*.rb' -print0 | xargs -0 -n1 ruby -c > /dev/null
+          echo "api suite parses"
+
+      - name: Compile the ruby suite against rail0-ruby main
+        if: steps.guard.outputs.configured == 'true'
+        working-directory: rail0-test/ruby
+        env:
+          BUNDLE_BUILD__RBSECP256K1: "--with-system-libraries"
+        run: |
+          bundle install
+          find . -name '*.rb' -print0 | xargs -0 -n1 ruby -c > /dev/null
+          echo "ruby suite parses"
